@@ -28,7 +28,9 @@ export const organize = onCall(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
     }
-    if (!isAllowed(request.auth.token.email, AI_ALLOWED_EMAILS.value())) {
+    // Only trust a verified email for the allowlist (e.g. an unverified email/password signup can't claim it).
+    const verifiedEmail = request.auth.token.email_verified ? request.auth.token.email : undefined;
+    if (!isAllowed(verifiedEmail, AI_ALLOWED_EMAILS.value())) {
       throw new HttpsError("permission-denied", "AI 정리 사용 권한이 없는 계정입니다.");
     }
 
