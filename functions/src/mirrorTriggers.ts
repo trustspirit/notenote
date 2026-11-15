@@ -1,5 +1,5 @@
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { getFirestore, type DocumentReference, type DocumentSnapshot, type Firestore } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
 import { onDocumentWritten } from "firebase-functions/firestore";
 import {
@@ -33,51 +33,66 @@ const notebookDoc = (db: Firestore, uid: string, id: string) => db.doc(`users/${
 const publicNoteDoc = (db: Firestore, uid: string, id: string) => db.doc(`publicNotes/${shareId(uid, id)}`);
 const publicNotebookDoc = (db: Firestore, uid: string, id: string) => db.doc(`publicNotebooks/${shareId(uid, id)}`);
 
-export async function reconcileNote(db: Firestore, uid: string, noteId: string, before: PrivateNote | null) {
-  const current = readPrivateNote(noteId, (await noteDoc(db, uid, noteId).get()).data());
-
+/** Reads the note and its notebooks' share flags, then decides what the mirror needs. */
+async function planNote(
+  read: (ref: DocumentReference) => Promise<DocumentSnapshot>,
+  db: Firestore, uid: string, noteId: string, before: PrivateNote | null,
+) {
+  const current = readPrivateNote(noteId, (await read(noteDoc(db, uid, noteId))).data());
   const nbIds = [...new Set([before?.notebookId, current?.notebookId].filter((x): x is string => !!x))];
   const nbPublic = new Map<string, boolean>();
-  await Promise.all(nbIds.map(async (id) => {
-    nbPublic.set(id, (await notebookDoc(db, uid, id).get()).data()?.isPublic === true);
-  }));
+  for (const id of nbIds) nbPublic.set(id, (await read(notebookDoc(db, uid, id))).data()?.isPublic === true);
+  return { current, ops: planShareOps(before, current, (id) => nbPublic.get(id) ?? false) };
+}
 
-  const ops = planShareOps(before, current, (id) => nbPublic.get(id) ?? false);
-  if (ops.length === 0) return;
-  const name = ops.some((op) => op.kind.startsWith("upsert")) ? await authorName(uid) : "";
+export async function reconcileNote(db: Firestore, uid: string, noteId: string, before: PrivateNote | null) {
+  // Cheap check first: most saves touch nothing public and end here.
+  const draft = await planNote((ref) => ref.get(), db, uid, noteId, before);
+  if (draft.ops.length === 0) return;
+  const name = await authorName(uid);
 
-  for (const op of ops) {
-    switch (op.kind) {
-      case "upsertNote":
-        await publicNoteDoc(db, uid, noteId).set(toMirror(uid, name, current!));
-        break;
-      case "deleteNote":
-        await publicNoteDoc(db, uid, noteId).delete();
-        break;
-      case "upsertInNotebook":
-      case "deleteInNotebook": {
-        const nbRef = publicNotebookDoc(db, uid, op.notebookId);
-        const mirrorRef = nbRef.collection("notes").doc(noteId);
-        await db.runTransaction(async (tx) => {
-          const nb = await tx.get(nbRef);
+  // Re-read and write in one transaction. Reading the private docs inside it closes the
+  // window where a slow run could publish a note the owner has unshared meanwhile:
+  // a concurrent change to those docs makes this transaction retry on the new state.
+  await db.runTransaction(async (tx) => {
+    const { current, ops } = await planNote((ref) => tx.get(ref), db, uid, noteId, before);
+    const nbSnaps = new Map<string, DocumentSnapshot>();
+    for (const op of ops) {
+      if (op.kind === "upsertInNotebook" || op.kind === "deleteInNotebook") {
+        nbSnaps.set(op.notebookId, await tx.get(publicNotebookDoc(db, uid, op.notebookId)));
+      }
+    }
+    // Firestore transactions: all reads above, all writes below.
+    for (const op of ops) {
+      switch (op.kind) {
+        case "upsertNote":
+          tx.set(publicNoteDoc(db, uid, noteId), toMirror(uid, name, current!));
+          break;
+        case "deleteNote":
+          tx.delete(publicNoteDoc(db, uid, noteId));
+          break;
+        case "upsertInNotebook":
+        case "deleteInNotebook": {
+          const nb = nbSnaps.get(op.notebookId)!;
+          const mirrorRef = nb.ref.collection("notes").doc(noteId);
           // No notebook mirror yet: the notebook trigger builds the whole thing.
           if (!nb.exists) {
             if (op.kind === "deleteInNotebook") tx.delete(mirrorRef);
-            return;
+            break;
           }
           const index = (nb.data()?.notes ?? []) as IndexEntry[];
           if (op.kind === "upsertInNotebook") {
             tx.set(mirrorRef, toMirror(uid, name, current!));
-            tx.update(nbRef, { notes: upsertIndex(index, toIndexEntry(current!)), updatedAt: Date.now() });
+            tx.update(nb.ref, { notes: upsertIndex(index, toIndexEntry(current!)), updatedAt: Date.now() });
           } else {
             tx.delete(mirrorRef);
-            tx.update(nbRef, { notes: removeFromIndex(index, noteId), updatedAt: Date.now() });
+            tx.update(nb.ref, { notes: removeFromIndex(index, noteId), updatedAt: Date.now() });
           }
-        });
-        break;
+          break;
+        }
       }
     }
-  }
+  });
 }
 
 export async function reconcileNotebook(db: Firestore, uid: string, nbId: string) {
@@ -102,6 +117,11 @@ export async function reconcileNotebook(db: Firestore, uid: string, nbId: string
   for (const n of notes) void writer.set(nbRef.collection("notes").doc(n.id), toMirror(uid, name, n));
   for (const d of existing) if (!keep.has(d.id)) void writer.delete(d);
   await writer.close();
+
+  // The bulk write is too big for one transaction, so check afterwards instead: if the
+  // owner unshared while we were writing, take everything down again. (The unshare's own
+  // trigger also deletes; whichever runs last leaves the mirror gone.)
+  if ((await notebookDoc(db, uid, nbId).get()).data()?.isPublic !== true) await db.recursiveDelete(nbRef);
 }
 
 export const syncNoteMirror = onDocumentWritten(

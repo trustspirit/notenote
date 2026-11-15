@@ -44,6 +44,18 @@ await waitFor("shared note mirrored by trigger", `publicNotes/${A[0]}_n1`, 200);
 await put(`users/${A[0]}/notes/n1`, ...A, priv({ isPublic: false }));
 await waitFor("unshared note removed", `publicNotes/${A[0]}_n1`, 404);
 
+// --- races: rapid share/unshare must always end private ---
+for (let i = 0; i < 5; i++) {
+  await put(`users/${A[0]}/notes/r${i}`, ...A, priv({ notebookId: "nbx", isPublic: true }));
+  await put(`users/${A[0]}/notes/r${i}`, ...A, priv({ notebookId: "nbx", isPublic: false }));
+}
+await sleep(3000);
+for (let i = 0; i < 5; i++) await check(`race ${i}: unshared right after share stays private`, 404, req("GET", `publicNotes/${A[0]}_r${i}`));
+await put(`users/${A[0]}/notebooks/nbr`, ...A, { name: "R", isPublic: true, createdAt: 1 });
+await put(`users/${A[0]}/notebooks/nbr`, ...A, { name: "R", isPublic: false, createdAt: 1 });
+await sleep(3000);
+await check("race: notebook unshared right after share stays private", 404, req("GET", `publicNotebooks/${A[0]}_nbr`));
+
 // --- triggers: notebook share ---
 await put(`users/${A[0]}/notes/n2`, ...A, priv({ title: "second" }));
 await put(`users/${A[0]}/notebooks/nb1`, ...A, { name: "NB", isPublic: true, createdAt: 1 });
