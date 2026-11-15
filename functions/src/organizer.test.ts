@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type Anthropic from "@anthropic-ai/sdk";
+import Anthropic from "@anthropic-ai/sdk";
 import {
   MAX_SEARCHES, OrganizeError, OrganizeInputSchema, collectSources, normalizeTags, organizeNote, researchNote,
 } from "./organizer.js";
@@ -120,6 +120,18 @@ describe("researchNote", () => {
     const { client, create } = scripted(turn, turn, turn, turn, turn);
     await expect(researchNote(client, input)).rejects.toMatchObject({ code: "invalid_output" });
     expect(create).toHaveBeenCalledTimes(4);
+  });
+
+  it("doesn't let a later-round API error look refundable (searches were already billed)", async () => {
+    const { client, create } = scripted({ stop_reason: "pause_turn", content: [] });
+    create.mockRejectedValueOnce(new Anthropic.APIError(500, undefined, "boom", new Headers()));
+    await expect(researchNote(client, input)).rejects.toMatchObject({ code: "interrupted" });
+  });
+
+  it("passes a first-round API error through (nothing billed, quota is refunded)", async () => {
+    const create = vi.fn().mockRejectedValue(new Anthropic.APIError(503, undefined, "down", new Headers()));
+    const client = { beta: { messages: { create } } } as unknown as Anthropic;
+    await expect(researchNote(client, input)).rejects.toBeInstanceOf(Anthropic.APIError);
   });
 
   it("rejects a submission that doesn't match the schema", async () => {

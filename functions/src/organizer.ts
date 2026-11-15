@@ -32,7 +32,7 @@ export type ResearchedNote = OrganizedNote & { sources: Source[] };
 export class OrganizeError extends Error {
   constructor(
     message: string,
-    readonly code: "refused" | "truncated" | "invalid_output",
+    readonly code: "refused" | "truncated" | "invalid_output" | "interrupted",
   ) {
     super(message);
   }
@@ -138,12 +138,30 @@ export function collectSources(content: BetaContentBlock[], into: Map<string, st
   }
 }
 
+type CreateParams = Parameters<Anthropic["beta"]["messages"]["create"]>[0];
+
+/**
+ * After the first round, searches have already been billed. A later API failure must not
+ * look like "nothing happened" (index.ts refunds quota for raw API errors), so it becomes
+ * an OrganizeError, which is not refunded.
+ */
+async function createRound(client: Anthropic, round: number, params: CreateParams & { stream?: false }) {
+  try {
+    return await client.beta.messages.create(params);
+  } catch (err) {
+    if (round > 0 && err instanceof Anthropic.APIError) {
+      throw new OrganizeError("The research was interrupted. Please try again.", "interrupted");
+    }
+    throw err;
+  }
+}
+
 export async function researchNote(client: Anthropic, input: OrganizeInput): Promise<ResearchedNote> {
   const messages: BetaMessageParam[] = [{ role: "user", content: noteMessage(input) }];
   const seen = new Map<string, string>();
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
-    const response = await client.beta.messages.create({
+    const response = await createRound(client, round, {
       model: MODEL,
       max_tokens: 16000,
       // Checking facts takes more care than reformatting: medium, not low.
