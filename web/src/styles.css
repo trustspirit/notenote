@@ -43,8 +43,10 @@ body { background: var(--color-background-body); }
   padding: 10px 12px; border: 0; border-radius: var(--radius-element);
   background: transparent; color: inherit; font: inherit; cursor: pointer;
 }
-.note-item:hover { background: var(--color-tint-hover); }
-.note-item[aria-current="true"] { background: var(--color-accent-muted); }
+/* --color-tint-hover is an opaque overlay color (black), meant to be layered with opacity — not a background. */
+.note-item:hover { background: color-mix(in srgb, var(--color-text-primary) 6%, transparent); }
+.note-item[aria-current="true"] { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+.note-item[aria-current="true"]:hover { background: color-mix(in srgb, var(--color-accent) 16%, transparent); }
 .note-item:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
 /* ---------- editor ---------- */
