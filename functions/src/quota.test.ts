@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayKey, isAllowed, nextUsage } from "./quota.js";
+import { dayKey, isAllowed, nextUsage, refundUsage } from "./quota.js";
 
 describe("nextUsage", () => {
   it("starts counting on a fresh day", () => {
@@ -24,4 +24,13 @@ describe("isAllowed", () => {
 
 it("dayKey uses UTC date", () => {
   expect(dayKey(new Date("2026-11-15T23:30:00Z"))).toBe("2026-11-15");
+});
+
+describe("refundUsage", () => {
+  it("gives back one call of today only", () => {
+    expect(refundUsage({ day: "2026-11-15", count: 3 }, "2026-11-15")).toEqual({ day: "2026-11-15", count: 2 });
+    expect(refundUsage({ day: "2026-11-14", count: 3 }, "2026-11-15")).toBeNull();
+    expect(refundUsage({ day: "2026-11-15", count: 0 }, "2026-11-15")).toBeNull();
+    expect(refundUsage(undefined, "2026-11-15")).toBeNull();
+  });
 });

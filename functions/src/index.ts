@@ -5,7 +5,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { defineInt, defineSecret, defineString } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { OrganizeError, OrganizeInputSchema, organizeNote } from "./organizer.js";
-import { consumeDailyQuota, isAllowed } from "./quota.js";
+import { consumeDailyQuota, refundDailyQuota, isAllowed } from "./quota.js";
 
 initializeApp();
 
@@ -49,6 +49,10 @@ export const organize = onCall(
     try {
       return await organizeNote(client, parsed.data);
     } catch (err) {
+      // No answer was produced, so the call shouldn't count against today's limit.
+      if (err instanceof Anthropic.APIError) {
+        await refundDailyQuota(getFirestore(), request.auth.uid).catch((e) => logger.warn("quota refund failed", e));
+      }
       if (err instanceof OrganizeError) {
         throw new HttpsError("failed-precondition", err.message, { code: err.code });
       }

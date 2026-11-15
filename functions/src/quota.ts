@@ -28,6 +28,25 @@ export async function consumeDailyQuota(db: Firestore, uid: string, limit: numbe
   });
 }
 
+/** Pure refund step: gives back one call of `today` (never below zero, never for a past day). */
+export function refundUsage(prev: Usage | undefined, today: string): Usage | null {
+  if (!prev || prev.day !== today || prev.count <= 0) return null;
+  return { day: today, count: prev.count - 1 };
+}
+
+/**
+ * Gives a call back when the AI request failed before producing anything
+ * (bad key, overload, outage). Refusals/truncations used tokens, so they stay counted.
+ */
+export async function refundDailyQuota(db: Firestore, uid: string, now = new Date()) {
+  const ref = db.collection("usage").doc(uid);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const next = refundUsage(snap.data() as Usage | undefined, dayKey(now));
+    if (next) tx.set(ref, next);
+  });
+}
+
 /** Empty allowlist = everyone signed in may use AI. */
 export function isAllowed(email: string | undefined, allowlist: string): boolean {
   const list = allowlist.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
