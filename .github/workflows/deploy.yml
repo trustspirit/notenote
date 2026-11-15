@@ -67,10 +67,16 @@ jobs:
           VITE_USE_EMULATOR: "false"
         run: npm run build
       - name: Authenticate to Google Cloud
+        id: auth
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           workload_identity_provider: projects/612953523275/locations/global/workloadIdentityPools/github/providers/notenote
           service_account: github-deployer@pensieve-smart-notes.iam.gserviceaccount.com
+          # firebase-tools can't use the external_account credentials file, so hand it a short-lived token
+          token_format: access_token
+          create_credentials_file: false
       - name: Deploy
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
         # --force: the Firestore mirror triggers intentionally use retry: true
         run: npx --yes firebase-tools@15 deploy --only firestore,functions,hosting --project "$FIREBASE_PROJECT_ID" --force --non-interactive
