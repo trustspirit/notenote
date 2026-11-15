@@ -17,6 +17,7 @@ import type { PublicNote, PublicNotebook } from "../lib/types";
 import { navigate } from "../router";
 import { Loading } from "./Loading";
 import { LogoMark } from "./Logo";
+import { MindMapCanvas } from "./MindMapCanvas";
 
 function useLoad<T>(load: () => Promise<T | null>, deps: unknown[]) {
   const [state, setState] = useState<{ data: T | null; loading: boolean }>({ data: null, loading: true });
@@ -79,7 +80,17 @@ function NoteArticle({ note }: { note: PublicNote }) {
           </HStack>
         )}
       </VStack>
-      <div className="prose readonly" dangerouslySetInnerHTML={{ __html: sanitizeNoteHtml(note.contentHtml) }} />
+      {note.kind === "mindmap" && note.mindmap?.length ? (
+        <>
+          <MindMapCanvas nodes={note.mindmap} height="min(70dvh, 640px)" />
+          <details className="mm-outline">
+            <summary>목록으로 보기</summary>
+            <div className="prose readonly" dangerouslySetInnerHTML={{ __html: sanitizeNoteHtml(note.contentHtml) }} />
+          </details>
+        </>
+      ) : (
+        <div className="prose readonly" dangerouslySetInnerHTML={{ __html: sanitizeNoteHtml(note.contentHtml) }} />
+      )}
     </article>
   );
 }

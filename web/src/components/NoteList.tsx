@@ -6,6 +6,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
+import { Network } from "lucide-react";
 import type { ReactNode } from "react";
 import { formatDate } from "../lib/format";
 import { excerpt } from "../lib/sanitize";
@@ -19,6 +20,7 @@ interface Props {
   onSearch: (q: string) => void;
   onSelect: (id: string) => void;
   onCreate: () => void;
+  onCreateMindmap: () => void;
   /** Notebook share/rename/delete controls when a notebook is selected. */
   headerExtra?: ReactNode;
 }
@@ -28,7 +30,10 @@ export function NoteList(p: Props) {
     <VStack gap={3} className="note-list">
       <HStack gap={2} vAlign="center" justify="between">
         <Heading level={2} maxLines={1}>{p.heading}</Heading>
-        <Button label="새 노트" icon={<span className="glyph">＋</span>} variant="primary" size="sm" onClick={p.onCreate} />
+        <HStack gap={1}>
+          <Button label="마인드맵" icon={<Network size={15} aria-hidden />} size="sm" variant="secondary" tooltip="새 마인드맵" onClick={p.onCreateMindmap} />
+          <Button label="새 노트" icon={<span className="glyph">＋</span>} variant="primary" size="sm" onClick={p.onCreate} />
+        </HStack>
       </HStack>
       {p.headerExtra}
       <TextInput
@@ -57,6 +62,7 @@ export function NoteList(p: Props) {
                 <HStack gap={1} vAlign="center">
                   <Text weight="semibold" maxLines={1}>{n.title || "제목 없음"}</Text>
                   {n.isPublic && <Badge variant="blue" label="공개" />}
+                  {n.kind === "mindmap" && <Badge variant="neutral" label="마인드맵" />}
                   {n.aiOrganizedAt && <Badge variant="neutral" label="정리됨" />}
                 </HStack>
                 <Text type="supporting" maxLines={2}>{excerpt(n.contentHtml) || "내용 없음"}</Text>

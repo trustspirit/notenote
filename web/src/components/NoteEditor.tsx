@@ -17,10 +17,12 @@ import StarterKit from "@tiptap/starter-kit";
 import { ListTree } from "lucide-react";
 import { useRef, useState } from "react";
 import { useAutosave, type SaveStatus } from "../hooks/useAutosave";
+import { createMindmap, mindmapToHtml, type MindNode } from "../lib/mindmap";
 import { organizeWithAI } from "../lib/organizeApi";
 import { shareUrls } from "../lib/publicRepository";
 import { sanitizeNoteHtml } from "../lib/sanitize";
 import type { Note, Notebook } from "../lib/types";
+import { MindMapCanvas } from "./MindMapCanvas";
 import { ShareToggle } from "./ShareToggle";
 import { Toolbar } from "./Toolbar";
 
@@ -61,6 +63,10 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
   const lastSaved = useRef<Note>(note);
   // Fields set outside of React state flow (AI result) that the next save must include.
   const pending = useRef<Partial<Note>>({});
+  const isMindmap = note.kind === "mindmap";
+  const mindmap = useRef<MindNode[]>(
+    note.mindmap ?? createMindmap(note.title, () => crypto.randomUUID().slice(0, 8)),
+  );
 
   const editor = useEditor({
     extensions: editorExtensions,
@@ -78,7 +84,9 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
       ...lastSaved.current,
       ...fields.current,
       ...pending.current,
-      contentHtml: editor.getHTML(),
+      ...(isMindmap
+        ? { mindmap: mindmap.current, contentHtml: mindmapToHtml(mindmap.current) }
+        : { contentHtml: editor.getHTML() }),
       updatedAt: Date.now(),
     };
     pending.current = {};
@@ -159,7 +167,7 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
         />
         <Badge variant={STATUS_BADGE[autosave.status]} label={STATUS_TEXT[autosave.status]} />
         <div className="spacer" />
-        <Button
+        {!isMindmap && <Button
           label={aiState.busy ? "정리하는 중…" : "정리하기"}
           icon={<ListTree size={16} strokeWidth={2} aria-hidden />}
           variant="secondary"
@@ -167,7 +175,7 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
           isDisabled={editor.isEmpty}
           tooltip="제목·문단·목록을 정돈해서 다시 저장해요"
           onClick={() => void organize()}
-        />
+        />}
         <Button label="삭제" variant="ghost" onClick={() => onDelete(lastSaved.current)} />
       </HStack>
 
@@ -228,10 +236,18 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
         />
       </HStack>
 
-      <Card padding={0}>
-        <Toolbar editor={editor} />
-        <EditorContent editor={editor} className="prose editor-body" />
-      </Card>
+      {isMindmap ? (
+        <MindMapCanvas
+          nodes={mindmap.current}
+          height="max(420px, calc(100dvh - 330px))"
+          onChange={(next) => { mindmap.current = next; autosave.schedule(); }}
+        />
+      ) : (
+        <Card padding={0}>
+          <Toolbar editor={editor} />
+          <EditorContent editor={editor} className="prose editor-body" />
+        </Card>
+      )}
 
       <Card padding={4} className="editor-footer">
         <ShareToggle

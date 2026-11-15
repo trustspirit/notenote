@@ -11,7 +11,8 @@ import type { User } from "firebase/auth";
 import { useMemo, useState } from "react";
 import { useWorkspace } from "../hooks/useWorkspace";
 import { shareUrls } from "../lib/publicRepository";
-import type { Note, Notebook } from "../lib/types";
+import { createMindmap, mindmapToHtml } from "../lib/mindmap";
+import type { Note, Notebook, NoteKind } from "../lib/types";
 import { useDialogs } from "./Dialogs";
 import { Loading } from "./Loading";
 import { LogoMark } from "./Logo";
@@ -43,14 +44,19 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
   const selectedNb = filter.kind === "notebook" ? notebooks.find((nb) => nb.id === filter.id) : undefined;
   const heading = selectedNb?.name ?? (filter.kind === "tag" ? `#${filter.tag}` : "모든 노트");
 
-  async function createNote() {
+  async function createNote(kind: NoteKind = "text") {
     const notebookId = selectedNb?.id ?? notebooks[0]?.id;
     if (!notebookId) return;
     const now = Date.now();
     const note: Note = {
       id: repo.newNoteRef().id, notebookId, title: "", contentHtml: "",
       tags: filter.kind === "tag" ? [filter.tag] : [], isPublic: false, createdAt: now, updatedAt: now,
+      kind,
     };
+    if (kind === "mindmap") {
+      note.mindmap = createMindmap("중심 주제", () => crypto.randomUUID().slice(0, 8));
+      note.contentHtml = mindmapToHtml(note.mindmap);
+    }
     await repo.saveNote(null, note, isNotebookPublic);
     setSelectedId(note.id);
   }
@@ -134,6 +140,7 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
       onSearch={setSearch}
       onSelect={setSelectedId}
       onCreate={() => void createNote()}
+      onCreateMindmap={() => void createNote("mindmap")}
       headerExtra={notebookControls}
     />
   );
