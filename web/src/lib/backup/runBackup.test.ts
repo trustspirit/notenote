@@ -14,8 +14,10 @@ class FakeDrive {
     this.files.set(id, { id, name, parent, content, appProperties: props as RemoteFile["appProperties"] });
     return id;
   }
-  async listAppFiles() {
-    return [...this.files.values()].filter((f) => !f.trashed && !this.inTrash(f.parent));
+  async listAppFiles(): Promise<RemoteFile[]> {
+    return [...this.files.values()]
+      .filter((f) => !f.trashed && !this.inTrash(f.parent))
+      .map((f) => ({ id: f.id, name: f.name, appProperties: f.appProperties, parents: f.parent ? [f.parent] : [], createdTime: f.id.slice(1).padStart(6, "0") }));
   }
   private inTrash(id: string | null): boolean {
     const f = id ? this.files.get(id) : undefined;
@@ -24,10 +26,12 @@ class FakeDrive {
   async createFolder(name: string, parent: string | null, props: Record<string, string>) { this.calls++; return this.add(name, parent, props); }
   async rename(id: string, name: string) { this.calls++; this.files.get(id)!.name = name; }
   async trash(id: string) { this.calls++; this.files.get(id)!.trashed = true; }
-  async uploadMarkdown(o: { fileId?: string; name: string; content: string; props: Record<string, string>; parent: string }) {
+  async uploadMarkdown(o: { fileId?: string; name: string; content: string; props: Record<string, string>; parent: string; previousParent?: string }) {
     this.calls++;
     if (!o.fileId) return this.add(o.name, o.parent, o.props, o.content);
-    Object.assign(this.files.get(o.fileId)!, { name: o.name, content: o.content, parent: o.parent, appProperties: o.props });
+    const f = this.files.get(o.fileId)!;
+    if (o.previousParent && f.parent !== o.previousParent) throw new Error("removeParents does not match current parent");
+    Object.assign(f, { name: o.name, content: o.content, appProperties: o.props, ...(o.previousParent && { parent: o.parent }) });
     return o.fileId;
   }
   live(role: string) { return [...this.files.values()].filter((f) => f.appProperties.role === role && !f.trashed && !this.inTrash(f.parent)); }
@@ -60,6 +64,15 @@ describe("runBackup", () => {
     const res = await runBackup(drive as unknown as DriveClient, notes, nbs);
     expect(res.changed).toBe(0);
     expect(drive.calls).toBe(0);
+  });
+
+  it("renaming a notebook renames its folder and rewrites the notes' front matter", async () => {
+    const drive = new FakeDrive();
+    const d = drive as unknown as DriveClient;
+    await runBackup(d, [note("a")], [nb("nb1", "Work")]);
+    await runBackup(d, [note("a")], [nb("nb1", "Projects")]);
+    expect(drive.live("notebook")[0].name).toBe("Projects");
+    expect(drive.live("note")[0].content).toContain('notebook: "Projects"');
   });
 
   it("follows edits, moves and deletions", async () => {

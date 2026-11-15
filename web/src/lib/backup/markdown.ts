@@ -16,12 +16,20 @@ turndown.use(gfm);
 turndown.addRule("tightListItem", {
   filter: "li",
   replacement: (content, node) => {
-    const parent = node.parentNode as HTMLElement;
-    const index = Array.prototype.indexOf.call(parent.children, node);
+    const li = node as HTMLElement;
+    const parent = li.parentNode as HTMLElement;
+    const index = Array.prototype.indexOf.call(parent.children, li);
     const start = Number(parent.getAttribute("start") ?? 1);
     const marker = parent.nodeName === "OL" ? `${start + index}. ` : "- ";
-    const body = content.trim().replace(/\n{2,}/g, "\n").replace(/\n/g, `\n${" ".repeat(marker.length)}`);
-    return `${marker}${body}\n`;
+    // Tight only when the item is one paragraph plus nested lists. Anything richer
+    // (several paragraphs, code blocks, quotes) keeps its blank lines verbatim.
+    const kids = Array.from(li.children);
+    const tight = kids.filter((k) => k.nodeName === "P").length <= 1
+      && kids.every((k) => ["P", "UL", "OL"].includes(k.nodeName));
+    let body = content.replace(/^\n+/, "").replace(/\s+$/, "");
+    if (tight) body = body.replace(/\n{2,}/g, "\n");
+    body = body.replace(/\n(?!\n)/g, `\n${" ".repeat(marker.length)}`);
+    return `${marker}${body}${tight ? "\n" : "\n\n"}`;
   },
 });
 // TipTap task items: <li data-type="taskItem" data-checked="true"><label><input …></label><div>text</div></li>
@@ -64,13 +72,21 @@ export function noteToMarkdown(note: Note, notebookName: string): string {
   return `${front}\n\n${heading}${htmlToMarkdown(note.contentHtml)}\n`;
 }
 
-/** Drive allows almost any name, but keep it portable for people who sync Drive to a PC. */
+/**
+ * Drive allows almost any name, but keep names portable for people who sync
+ * Drive to a PC (Windows forbids these characters). Cuts by code point so an
+ * emoji is never split into a lone surrogate.
+ */
+export function safeName(raw: string, fallback: string, max = 80): string {
+  const cleaned = raw.replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim();
+  const cut = Array.from(cleaned).slice(0, max).join("").replace(/[. ]+$/, "");
+  return cut || fallback;
+}
+
 export function noteFileName(note: Pick<Note, "title">): string {
-  const base = (note.title || "제목 없음")
-    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 80)
-    .replace(/[. ]+$/, "");
-  return `${base || "제목 없음"}.md`;
+  return `${safeName(note.title, "제목 없음")}.md`;
+}
+
+export function folderName(notebookName: string): string {
+  return safeName(notebookName, "노트북");
 }

@@ -36,7 +36,7 @@ export class DriveClient {
     do {
       const params = new URLSearchParams({
         q, pageSize: "1000", spaces: "drive",
-        fields: "nextPageToken,files(id,name,appProperties)",
+        fields: "nextPageToken,files(id,name,parents,createdTime,appProperties)",
         ...(pageToken && { pageToken }),
       });
       const page = await this.call<{ files: RemoteFile[]; nextPageToken?: string }>(`${API}?${params}`);
