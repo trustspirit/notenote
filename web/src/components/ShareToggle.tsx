@@ -39,8 +39,10 @@ export function ShareToggle({ isPublic, url, label, onToggle }: Props) {
         onChange={(checked) => void toggle(checked)}
       />
       {isPublic && (
-        <HStack gap={2} vAlign="center">
-          <TextInput label="공유 링크" isLabelHidden isReadOnly value={url} size="sm" width="100%" />
+        <HStack gap={2} vAlign="center" wrap="wrap" className="share-row">
+          <div className="share-url">
+            <TextInput label="공유 링크" isLabelHidden isReadOnly value={url} size="sm" width="100%" />
+          </div>
           <Button label={copied ? "복사됨" : "링크 복사"} icon={<Icon icon={copied ? "checkDouble" : "copy"} />} size="sm" onClick={() => void copy()} />
           <Button label="열기" icon={<Icon icon="externalLink" />} size="sm" variant="ghost" href={url} target="_blank" rel="noreferrer" />
         </HStack>

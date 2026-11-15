@@ -172,3 +172,7 @@ body { background: var(--color-background-body); }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+/* Share link row: the URL field flexes, the buttons never shrink (they wrap below instead). */
+.share-row > * { flex: none; }
+.share-row > .share-url { flex: 1 1 220px; min-width: 0; }
