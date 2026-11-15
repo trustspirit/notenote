@@ -27,12 +27,18 @@ export function MindMapCanvas({ nodes: initial, onChange, height = 520 }: Props)
   const frame = useRef<HTMLDivElement>(null);
   const pan = useRef<{ id: number; x: number; y: number; vx: number; vy: number } | null>(null);
 
-  // Persist after every committed change (not on mount).
-  const first = useRef(true);
+  // Persist after every committed change. Compared by identity rather than a
+  // "first run" flag, which StrictMode's double effect would defeat (saving on open).
+  const notified = useRef(history.value);
   useEffect(() => {
-    if (first.current) { first.current = false; return; }
+    if (history.value === notified.current) return;
+    notified.current = history.value;
     onChange?.(history.value);
   }, [history.value]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mirrors `editing` so blur handlers that run synchronously during focus() see the latest value.
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
 
   const fit = () => {
     const el = frame.current;
@@ -43,10 +49,14 @@ export function MindMapCanvas({ nodes: initial, onChange, height = 520 }: Props)
   // Wheel / trackpad pinch zooms around the pointer. Needs a non-passive listener.
   const viewRef = useRef(view);
   viewRef.current = view;
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   useEffect(() => {
     const el = frame.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      // Read-only maps sit inside a scrolling page: plain wheel scrolls it, pinch / ctrl+wheel zooms.
+      if (readOnlyRef.current && !e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
       const v = viewRef.current;
@@ -93,16 +103,21 @@ export function MindMapCanvas({ nodes: initial, onChange, height = 520 }: Props)
     history.commit(removeSubtree(nodes, id));
     setSelected(target.parent);
   }
-  function commitEdit() {
-    if (!editing) return;
-    const current = nodes.find((n) => n.id === editing.id);
-    if (current && editing.text.trim() && editing.text !== current.text) history.commit(renameNode(nodes, editing.id, editing.text));
+  function endEdit(save: boolean) {
+    const edit = editingRef.current;
+    if (!edit) return;
+    // Clear first: focusing the frame blurs the textarea, which calls endEdit again.
+    editingRef.current = null;
     setEditing(null);
+    const current = nodes.find((n) => n.id === edit.id);
+    if (save && current && edit.text.trim() && edit.text !== current.text) history.commit(renameNode(nodes, edit.id, edit.text));
     frame.current?.focus();
   }
 
   function onKeyDown(e: KeyboardEvent) {
-    if (readOnly || editing || e.target instanceof HTMLTextAreaElement) return;
+    // Only when the canvas itself has focus: keys on toolbar buttons keep their normal meaning,
+    // and Tab still moves focus out once nothing is selected.
+    if (readOnly || editing || e.target !== e.currentTarget) return;
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) history.redo(); else history.undo(); return; }
     if (!selected) return;
@@ -183,10 +198,10 @@ export function MindMapCanvas({ nodes: initial, onChange, height = 520 }: Props)
                   placeholder={n.text}
                   value={editing.text}
                   onChange={(e) => setEditing({ id: n.id, text: e.target.value })}
-                  onBlur={commitEdit}
+                  onBlur={() => endEdit(true)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); commitEdit(); }
-                    if (e.key === "Escape") { setEditing(null); frame.current?.focus(); }
+                    if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); endEdit(true); }
+                    if (e.key === "Escape") { e.preventDefault(); endEdit(false); }
                   }}
                 />
               ) : (
