@@ -26,6 +26,17 @@ it("dayKey uses UTC date", () => {
   expect(dayKey(new Date("2026-11-15T23:30:00Z"))).toBe("2026-11-15");
 });
 
+describe("units (research calls cost more)", () => {
+  it("refuses a call that would go past the limit", () => {
+    expect(nextUsage({ day: "2026-11-15", count: 2 }, "2026-11-15", 3, 2).allowed).toBe(false);
+    expect(nextUsage({ day: "2026-11-15", count: 1 }, "2026-11-15", 3, 2)).toEqual({ allowed: true, usage: { day: "2026-11-15", count: 3 } });
+  });
+  it("refunds the same units, never below zero", () => {
+    expect(refundUsage({ day: "2026-11-15", count: 3 }, "2026-11-15", 2)).toEqual({ day: "2026-11-15", count: 1 });
+    expect(refundUsage({ day: "2026-11-15", count: 1 }, "2026-11-15", 2)).toEqual({ day: "2026-11-15", count: 0 });
+  });
+});
+
 describe("refundUsage", () => {
   it("gives back one call of today only", () => {
     expect(refundUsage({ day: "2026-11-15", count: 3 }, "2026-11-15")).toEqual({ day: "2026-11-15", count: 2 });

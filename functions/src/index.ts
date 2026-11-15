@@ -4,7 +4,7 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { defineInt, defineSecret, defineString } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
-import { OrganizeError, OrganizeInputSchema, organizeNote } from "./organizer.js";
+import { OrganizeError, OrganizeInputSchema, organizeNote, researchNote } from "./organizer.js";
 import { consumeDailyQuota, refundDailyQuota, isAllowed } from "./quota.js";
 
 initializeApp();
@@ -12,15 +12,16 @@ initializeApp();
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 // Comma-separated emails allowed to use AI. Empty = every signed-in user.
 const AI_ALLOWED_EMAILS = defineString("AI_ALLOWED_EMAILS", { default: "" });
-// Max AI organize calls per user per UTC day.
+// AI units per user per UTC day: a plain organize uses 1, a research ("자료 보완") call uses 2.
 const AI_DAILY_LIMIT = defineInt("AI_DAILY_LIMIT", { default: 30 });
+const RESEARCH_UNITS = 2;
 
 export const organize = onCall(
   {
     region: "asia-northeast3",
     invoker: "public", // required so the browser's CORS preflight reaches the function
     secrets: [ANTHROPIC_API_KEY],
-    timeoutSeconds: 180,
+    timeoutSeconds: 300, // research mode searches the web before writing
     memory: "512MiB",
     maxInstances: 5,
   },
@@ -40,18 +41,23 @@ export const organize = onCall(
     }
 
     // Count the call only after the input is valid, so bad requests don't burn quota.
-    const quota = await consumeDailyQuota(getFirestore(), request.auth.uid, AI_DAILY_LIMIT.value());
+    const units = parsed.data.research ? RESEARCH_UNITS : 1;
+    const quota = await consumeDailyQuota(getFirestore(), request.auth.uid, AI_DAILY_LIMIT.value(), units);
     if (!quota.allowed) {
-      throw new HttpsError("resource-exhausted", `오늘 AI 정리 한도(${AI_DAILY_LIMIT.value()}회)를 모두 사용했습니다.`);
+      throw new HttpsError("resource-exhausted", parsed.data.research
+        ? `오늘 남은 AI 한도로는 자료 보완(${RESEARCH_UNITS}회분)을 할 수 없어요. 정리하기는 아직 가능할 수 있어요.`
+        : `오늘 AI 정리 한도(${AI_DAILY_LIMIT.value()}회)를 모두 사용했습니다.`);
     }
 
     const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
     try {
-      return await organizeNote(client, parsed.data);
+      return parsed.data.research
+        ? await researchNote(client, parsed.data)
+        : { ...(await organizeNote(client, parsed.data)), sources: [] };
     } catch (err) {
       // No answer was produced, so the call shouldn't count against today's limit.
       if (err instanceof Anthropic.APIError) {
-        await refundDailyQuota(getFirestore(), request.auth.uid).catch((e) => logger.warn("quota refund failed", e));
+        await refundDailyQuota(getFirestore(), request.auth.uid, units).catch((e) => logger.warn("quota refund failed", e));
       }
       if (err instanceof OrganizeError) {
         throw new HttpsError("failed-precondition", err.message, { code: err.code });

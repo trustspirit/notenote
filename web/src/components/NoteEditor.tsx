@@ -14,10 +14,11 @@ import TextAlign from "@tiptap/extension-text-align";
 import { Placeholder } from "@tiptap/extensions";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { ListTree } from "lucide-react";
+import { BookOpenCheck, ListTree } from "lucide-react";
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { useAutosave, type SaveStatus } from "../hooks/useAutosave";
 import { createMindmap, mindmapToHtml, type MindNode } from "../lib/mindmap";
+import { keepKnownLinks, linkHrefs } from "../lib/links";
 import { organizeWithAI } from "../lib/organizeApi";
 import { shareUrls } from "../lib/publicRepository";
 import { sanitizeNoteHtml } from "../lib/sanitize";
@@ -46,6 +47,14 @@ export interface EditorControl {
 }
 
 interface Snapshot { title: string; html: string; tags: string[] }
+interface AiState {
+  /** Which AI action is running; the note is locked meanwhile. */
+  busy: false | "organize" | "research";
+  error?: string;
+  undo?: Snapshot;
+  summary?: string;
+  researched?: boolean;
+}
 
 const STATUS_TEXT: Record<SaveStatus, string> = {
   saved: "저장됨", dirty: "편집 중…", saving: "저장 중…", error: "저장 실패 · 재시도 중",
@@ -67,7 +76,7 @@ export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack
   const [tags, setTags] = useState<string[]>(note.tags);
   const [notebookId, setNotebookId] = useState(note.notebookId);
   const [isPublic, setIsPublic] = useState(note.isPublic);
-  const [aiState, setAiState] = useState<{ busy: boolean; error?: string; undo?: Snapshot; summary?: string }>({ busy: false });
+  const [aiState, setAiState] = useState<AiState>({ busy: false });
 
   // Latest persisted version: the base for the next save and for delete.
   const lastSaved = useRef<Note>(note);
@@ -124,23 +133,28 @@ export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack
     };
   }
 
-  async function organize() {
+  async function organize(research = false) {
     if (!editor || editor.isEmpty) return;
     await autosave.flush();
     const before: Snapshot = { title: fields.current.title, html: editor.getHTML(), tags: fields.current.tags };
-    setAiState({ busy: true });
+    setAiState({ busy: research ? "research" : "organize" });
     // The result replaces the whole note, so freeze it meanwhile: edits made now would be lost.
     editor.setEditable(false);
     try {
-      const result = await organizeWithAI(before.title, before.html);
-      editor.commands.setContent(sanitizeNoteHtml(result.html), { emitUpdate: false });
+      const result = await organizeWithAI(before.title, before.html, research);
+      // Only links the model actually found (or the author already had) survive.
+      const links = keepKnownLinks(sanitizeNoteHtml(result.html), [
+        ...result.sources.map((s) => s.url), ...linkHrefs(before.html),
+      ]);
+      editor.commands.setContent(links.html, { emitUpdate: false });
       setTitle(result.title);
       setTags(result.tags);
       fields.current = { ...fields.current, title: result.title, tags: result.tags };
       pending.current = { aiOrganizedAt: Date.now() };
       autosave.schedule();
       await autosave.flush();
-      setAiState({ busy: false, undo: before, summary: result.summary });
+      const note = links.removed ? ` 확인되지 않은 링크 ${links.removed}개는 텍스트만 남겼어요.` : "";
+      setAiState({ busy: false, undo: before, summary: result.summary + note, researched: research });
     } catch (err) {
       setAiState({ busy: false, error: err instanceof Error ? err.message : "정리에 실패했습니다." });
     } finally {
@@ -193,22 +207,33 @@ export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack
         />
         <Badge variant={STATUS_BADGE[autosave.status]} label={STATUS_TEXT[autosave.status]} />
         <div className="spacer" />
-        {!isMindmap && <Button
-          label={aiState.busy ? "정리하는 중…" : "정리하기"}
-          icon={<ListTree size={16} strokeWidth={2} aria-hidden />}
-          variant="secondary"
-          isLoading={aiState.busy}
-          isDisabled={editor.isEmpty}
-          tooltip="제목·문단·목록을 정돈해서 다시 저장해요"
-          onClick={() => void organize()}
-        />}
+        {!isMindmap && <>
+          <Button
+            label={aiState.busy === "organize" ? "정리하는 중…" : "정리하기"}
+            icon={<ListTree size={16} strokeWidth={2} aria-hidden />}
+            variant="secondary"
+            isLoading={aiState.busy === "organize"}
+            isDisabled={editor.isEmpty || !!aiState.busy}
+            tooltip="제목·문단·목록을 정돈해서 다시 저장해요"
+            onClick={() => void organize()}
+          />
+          <Button
+            label={aiState.busy === "research" ? "자료 찾는 중…" : "자료 보완"}
+            icon={<BookOpenCheck size={16} strokeWidth={2} aria-hidden />}
+            variant="secondary"
+            isLoading={aiState.busy === "research"}
+            isDisabled={editor.isEmpty || !!aiState.busy}
+            tooltip="정리하면서 웹에서 사실을 확인하고, 언급된 말씀·글의 출처 링크를 덧붙여요 (1~2분, 한도 2회분)"
+            onClick={() => void organize(true)}
+          />
+        </>}
         <Button label="삭제" variant="ghost" onClick={() => onDelete(lastSaved.current)} />
       </HStack>
 
       {aiState.undo && (
         <Banner
           status="success"
-          title="노트를 정리했어요"
+          title={aiState.researched ? "자료를 확인해 정리했어요" : "노트를 정리했어요"}
           description={aiState.summary}
           isDismissable
           dismissLabel="닫기"
@@ -232,7 +257,7 @@ export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack
         value={title}
         placeholder="제목 없음"
         aria-label="제목"
-        readOnly={aiState.busy}
+        readOnly={!!aiState.busy}
         onChange={(e) => change(setTitle)(e.target.value)}
       />
 
@@ -252,7 +277,7 @@ export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack
           size="sm"
           width={140}
           placeholder="+ 태그 (Enter)"
-          isDisabled={aiState.busy}
+          isDisabled={!!aiState.busy}
           value={tagDraft}
           onChange={setTagDraft}
           onKeyDown={(e) => {
