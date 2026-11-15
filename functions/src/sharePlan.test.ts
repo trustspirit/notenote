@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planShareOps } from "./sharePlan";
+import { planShareOps } from "./sharePlan.js";
 
 const pub = (ids: string[]) => (nb: string) => ids.includes(nb);
 const note = (over: Partial<{ notebookId: string; isPublic: boolean }> = {}) => ({

@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "serve": "npm run build && firebase emulators:start --only functions",
-    "deploy": "firebase deploy --only functions"
+    "deploy": "firebase deploy --only functions",
+    "test:emulator": "npm run build && firebase emulators:exec --project demo-smart-notes --only auth,firestore,functions 'node e2e/emulator.e2e.mjs'"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

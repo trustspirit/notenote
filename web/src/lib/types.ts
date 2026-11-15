@@ -38,12 +38,24 @@ export interface PublicNote {
   mindmap?: MindNode[];
 }
 
+/** A row of a shared notebook's note list (kept on the notebook doc by Cloud Functions). */
+export interface PublicNoteSummary {
+  id: string;
+  title: string;
+  excerpt: string;
+  tags: string[];
+  updatedAt: number;
+  kind: NoteKind;
+}
+
 export interface PublicNotebook {
   id: string;
   ownerUid: string;
   authorName: string;
   name: string;
   updatedAt: number;
+  /** Newest first. Missing only for a moment while the mirror is being built. */
+  notes?: PublicNoteSummary[];
 }
 
 export interface OrganizeResult {

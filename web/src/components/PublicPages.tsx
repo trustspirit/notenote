@@ -12,7 +12,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { formatDate } from "../lib/format";
 import { publicRepository } from "../lib/publicRepository";
-import { excerpt, sanitizeNoteHtml } from "../lib/sanitize";
+import { sanitizeNoteHtml } from "../lib/sanitize";
 import type { PublicNote, PublicNotebook } from "../lib/types";
 import { navigate } from "../router";
 import { Loading } from "./Loading";
@@ -103,15 +103,18 @@ export function PublicNotePage({ noteId }: { noteId: string }) {
 }
 
 export function PublicNotebookPage({ notebookId, noteId }: { notebookId: string; noteId?: string }) {
+  // One read for the whole list; a note's content is fetched only when it is opened.
   const nb = useLoad<PublicNotebook>(() => publicRepository.getNotebook(notebookId), [notebookId]);
-  const list = useLoad<PublicNote[]>(() => publicRepository.listNotebookNotes(notebookId), [notebookId]);
+  const current = useLoad<PublicNote>(
+    () => (noteId ? publicRepository.getNotebookNote(notebookId, noteId) : Promise.resolve(null)),
+    [notebookId, noteId],
+  );
 
-  if (nb.loading || list.loading) return <Loading />;
+  if (nb.loading) return <Loading />;
   if (!nb.data) return <NotFound />;
 
-  const notes = list.data ?? [];
+  const notes = nb.data.notes ?? [];
   const base = `/share/notebook/${notebookId}`;
-  const current = noteId ? notes.find((n) => n.id === noteId) : undefined;
 
   const sideNav = (
     <SideNav>
@@ -133,7 +136,7 @@ export function PublicNotebookPage({ notebookId, noteId }: { notebookId: string;
   return (
     <PublicShell sideNav={sideNav} subheading={nb.data.name}>
       {noteId ? (
-        current ? <NoteArticle key={current.id} note={current} /> : (
+        current.loading ? <Loading /> : current.data ? <NoteArticle key={current.data.id} note={current.data} /> : (
           <div className="center-screen"><EmptyState title="공유되지 않는 노트" description="이 노트는 더 이상 공유되지 않습니다." /></div>
         )
       ) : (
@@ -151,7 +154,7 @@ export function PublicNotebookPage({ notebookId, noteId }: { notebookId: string;
                   <Card padding={4}>
                     <VStack gap={1}>
                       <Heading level={3}>{n.title || "제목 없음"}</Heading>
-                      <Text color="secondary" maxLines={2}>{excerpt(n.contentHtml, 180)}</Text>
+                      <Text color="secondary" maxLines={2}>{n.excerpt}</Text>
                       <Text type="supporting" size="2xs">{formatDate(n.updatedAt)}</Text>
                     </VStack>
                   </Card>

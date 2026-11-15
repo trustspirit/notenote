@@ -72,3 +72,6 @@ export const organize = onCall(
     }
   },
 );
+
+// Public read-only mirror of shared notes/notebooks (clients can't write it).
+export { syncNoteMirror, syncNotebookMirror } from "./mirrorTriggers.js";

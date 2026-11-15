@@ -25,15 +25,19 @@ users/{uid}/notebooks/{id}      { name, isPublic, createdAt }                 # 
 users/{uid}/notes/{id}          { notebookId, title, contentHtml, tags, isPublic, ... }
 
 publicNotes/{uid}_{noteId}                      # mirror of a note shared on its own (get only, not listable)
-publicNotebooks/{uid}_{notebookId}              # mirror of a shared notebook (get only)
-publicNotebooks/{uid}_{notebookId}/notes/{noteId}  # its notes (listable only inside that notebook)
+publicNotebooks/{uid}_{notebookId}              # mirror of a shared notebook + its note list (get only)
+publicNotebooks/{uid}_{notebookId}/notes/{noteId}  # its notes, one get each
 ```
 
-The client keeps the public mirror in sync on every save (`web/src/lib/sharePlan.ts` decides what to write or delete). Public pages sanitize HTML with DOMPurify before rendering.
+Clients only write their private docs; sharing is just the `isPublic` flag. The public mirror is
+maintained by Firestore-triggered Cloud Functions (`functions/src/mirrorTriggers.ts`, with
+`sharePlan.ts` deciding what to write or delete), and the security rules deny every client write to
+`publicNotes` / `publicNotebooks`, so a link can't be spoofed, taken over or left behind. Each trigger
+re-reads the current private docs, so retries and out-of-order events converge on the right mirror.
+A shared notebook doc carries its note list (title, excerpt, date; newest 1000), so the public page
+needs one read, not a collection query. Public pages sanitize HTML with DOMPurify before rendering.
 
-Public ids start with the owner's uid, so the security rules can check who may write behind a link
-without lookups: nobody can re-create someone else's (even unshared) link, and large notebooks can be
-shared in one batch.
+The mirror updates a moment after a save (one trigger run), not in the same write.
 
 Share URLs:
 - `/share/note/{uid}_{noteId}`
@@ -55,7 +59,10 @@ Emulator ports are 9299 (auth), 8181 (firestore), 5101 (functions) and 4100 (UI)
 
 ## Deploy
 
-1. Create a Firebase project, enable **Authentication → Google**, create a **Firestore** database, and switch the project to the **Blaze** plan.
+1. Create a Firebase project, enable **Authentication → Google**, create a **Firestore** database in
+   **asia-northeast3 (Seoul)**, and switch the project to the **Blaze** plan. The mirror triggers are pinned
+   to that region (`REGION` in `functions/src/mirrorTriggers.ts`); Firestore triggers must run in the
+   database's region, so change both together if you pick another location.
 2. `cp .firebaserc.example .firebaserc` and set your project ID.
 3. Set the Anthropic key as a secret: `firebase functions:secrets:set ANTHROPIC_API_KEY`
 4. Fill in `web/.env.local` with the web app config (`VITE_USE_EMULATOR=false`).
@@ -87,8 +94,10 @@ the top bar shows **Drive 다시 연결**, one click to resume.
 ## Tests
 
 ```bash
-(cd functions && npm test)   # organizer: output parsing, refusal/truncation handling, tag normalization
-(cd web && npm test)         # share sync plan, router, mind-map layout, Drive backup plan/markdown
+(cd functions && npm test)   # organizer parsing, share plan, mirror/index helpers
+(cd web && npm test)         # router, mind-map layout, Drive backup plan/markdown
+(cd functions && npm run test:emulator)   # rules + mirror triggers end to end (starts its own emulators;
+                                          # stop a running `emulators:start` first, ports are shared)
 ```
 
 ## Customizing the AI organizer

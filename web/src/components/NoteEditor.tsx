@@ -31,7 +31,7 @@ interface Props {
   /** For the note's public link (share ids are owner-prefixed). */
   ownerUid: string;
   notebooks: Notebook[];
-  onSave: (prev: Note, next: Note) => Promise<void>;
+  onSave: (next: Note) => Promise<void>;
   onDelete: (note: Note) => void;
   /** Narrow screens: go back to the note list. */
   onBack?: () => void;
@@ -69,7 +69,7 @@ export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack
   const [isPublic, setIsPublic] = useState(note.isPublic);
   const [aiState, setAiState] = useState<{ busy: boolean; error?: string; undo?: Snapshot; summary?: string }>({ busy: false });
 
-  // Latest persisted version: the "prev" side for public-mirror diffs.
+  // Latest persisted version: the base for the next save and for delete.
   const lastSaved = useRef<Note>(note);
   // Fields set outside of React state flow (AI result) that the next save must include.
   const pending = useRef<Partial<Note>>({});
@@ -102,7 +102,7 @@ export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack
     const sent = pending.current;
     pending.current = {};
     try {
-      await onSave(lastSaved.current, next);
+      await onSave(next);
     } catch (err) {
       pending.current = { ...sent, ...pending.current }; // keep e.g. aiOrganizedAt for the retry
       throw err;

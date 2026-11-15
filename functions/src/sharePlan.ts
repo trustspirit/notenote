@@ -1,4 +1,4 @@
-import type { Note } from "./types";
+import type { PrivateNote as Note } from "./mirror.js";
 
 /**
  * Pure decision logic for keeping the public mirror in sync with a note.

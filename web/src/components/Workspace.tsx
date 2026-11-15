@@ -10,6 +10,7 @@ import { useMediaQuery } from "@astryxdesign/core/hooks";
 import type { User } from "firebase/auth";
 import { useMemo, useRef, useState } from "react";
 import { useDriveBackup } from "../hooks/useDriveBackup";
+import { useNoteSearch } from "../hooks/useNoteSearch";
 import { useWorkspace } from "../hooks/useWorkspace";
 import { shareUrls } from "../lib/publicRepository";
 import { createMindmap, mindmapToHtml } from "../lib/mindmap";
@@ -24,7 +25,7 @@ import { ShareToggle } from "./ShareToggle";
 import { Sidebar, type Filter } from "./Sidebar";
 
 export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => void }) {
-  const { repo, notebooks, notes, loading, isNotebookPublic } = useWorkspace(user);
+  const { repo, notebooks, notes, loading } = useWorkspace(user);
   const backup = useDriveBackup(user, notes, notebooks, !loading);
   const dialogs = useDialogs();
   const editorControl = useRef<EditorControl | null>(null);
@@ -34,15 +35,12 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
   // Below 900px the list and the editor share one column: list first, editor after a pick.
   const isNarrow = useMediaQuery("(max-width: 899px)");
 
-  const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return notes.filter((n) => {
-      if (filter.kind === "notebook" && n.notebookId !== filter.id) return false;
-      if (filter.kind === "tag" && !n.tags.includes(filter.tag)) return false;
-      if (!q) return true;
-      return n.title.toLowerCase().includes(q) || n.contentHtml.toLowerCase().includes(q);
-    });
-  }, [notes, filter, search]);
+  const matches = useNoteSearch(notes, search);
+  const visible = useMemo(() => notes.filter((n) => {
+    if (filter.kind === "notebook" && n.notebookId !== filter.id) return false;
+    if (filter.kind === "tag" && !n.tags.includes(filter.tag)) return false;
+    return matches(n);
+  }), [notes, filter, matches]);
 
   const selected = notes.find((n) => n.id === selectedId) ?? null;
   const selectedNb = filter.kind === "notebook" ? notebooks.find((nb) => nb.id === filter.id) : undefined;
@@ -61,7 +59,7 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
       note.mindmap = createMindmap("중심 주제", () => crypto.randomUUID().slice(0, 8));
       note.contentHtml = mindmapToHtml(note.mindmap);
     }
-    await repo.saveNote(null, note, isNotebookPublic);
+    await repo.saveNote(note);
     setSelectedId(note.id);
   }
 
@@ -75,7 +73,7 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
     // Drop pending edits first, or the editor's unmount save would re-create the note.
     if (editorControl.current?.noteId === note.id) editorControl.current.discard();
     setSelectedId(null);
-    await repo.deleteNote(note, isNotebookPublic);
+    await repo.deleteNote(note);
   }
 
   async function createNotebook() {
@@ -107,7 +105,7 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
     else await open?.flush();
     setFilter({ kind: "all" });
     setSelectedId(null);
-    await repo.deleteNotebook(nb, inside, isNotebookPublic);
+    await repo.deleteNotebook(nb, inside);
   }
 
   // Save the open note while still signed in: after sign-out the rules reject the write.
@@ -138,7 +136,7 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
         label="노트북"
         isPublic={selectedNb.isPublic}
         url={shareUrls.notebook(user.uid, selectedNb.id)}
-        onToggle={(next) => repo.setNotebookPublic(selectedNb, next, notes.filter((n) => n.notebookId === selectedNb.id))}
+        onToggle={(next) => repo.setNotebookPublic(selectedNb, next)}
       />
       <HStack gap={1}>
         <Button label="이름 변경" size="sm" variant="ghost" onClick={() => void renameNotebook(selectedNb)} />
@@ -168,7 +166,7 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
       ownerUid={user.uid}
       controlRef={editorControl}
       notebooks={notebooks}
-      onSave={(prev, next) => repo.saveNote(prev, next, isNotebookPublic)}
+      onSave={(next) => repo.saveNote(next)}
       onDelete={(n) => void deleteNote(n)}
       onBack={isNarrow ? () => setSelectedId(null) : undefined}
     />
