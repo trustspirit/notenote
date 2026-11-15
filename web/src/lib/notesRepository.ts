@@ -1,9 +1,10 @@
 import {
-  collection, deleteDoc, doc, onSnapshot, orderBy, query, setDoc, updateDoc, writeBatch,
+  collection, deleteDoc, doc, getDocs, onSnapshot, orderBy, query, setDoc, updateDoc, writeBatch,
   type DocumentReference, type Unsubscribe,
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
+import { shareId } from "./publicRepository";
 import { planShareOps, type ShareOp } from "./sharePlan";
 import type { Note, Notebook, PublicNote, PublicNotebook } from "./types";
 
@@ -11,10 +12,6 @@ const BATCH_LIMIT = 450;
 
 const notebooksCol = (uid: string) => collection(db, "users", uid, "notebooks");
 const notesCol = (uid: string) => collection(db, "users", uid, "notes");
-const publicNoteRef = (noteId: string) => doc(db, "publicNotes", noteId);
-const publicNotebookRef = (nbId: string) => doc(db, "publicNotebooks", nbId);
-const publicNotebookNoteRef = (nbId: string, noteId: string) =>
-  doc(db, "publicNotebooks", nbId, "notes", noteId);
 
 function toPublicNote(user: User, note: Note): PublicNote {
   return {
@@ -48,6 +45,19 @@ export class NotesRepository {
 
   private get uid() { return this.user.uid; }
 
+  // Public mirror locations, keyed by owner-prefixed share ids (see firestore.rules).
+  private publicNoteRef(noteId: string) { return doc(db, "publicNotes", shareId(this.uid, noteId)); }
+  private publicNotebookRef(nbId: string) { return doc(db, "publicNotebooks", shareId(this.uid, nbId)); }
+  private publicNotebookNoteRef(nbId: string, noteId: string) {
+    return doc(db, "publicNotebooks", shareId(this.uid, nbId), "notes", noteId);
+  }
+
+  /** Remove every mirrored note of a notebook, including ones missing from the local snapshot. */
+  private async purgeNotebookMirror(nbId: string) {
+    const snap = await getDocs(collection(db, "publicNotebooks", shareId(this.uid, nbId), "notes"));
+    await runInBatches(snap.docs.map((d) => (b) => b.delete(d.ref)));
+  }
+
   // ---------- subscriptions ----------
   watchNotebooks(cb: (notebooks: Notebook[]) => void): Unsubscribe {
     return onSnapshot(query(notebooksCol(this.uid), orderBy("createdAt")), (snap) =>
@@ -70,12 +80,15 @@ export class NotesRepository {
 
   async renameNotebook(notebook: Notebook, name: string) {
     await updateDoc(doc(notebooksCol(this.uid), notebook.id), { name });
-    if (notebook.isPublic) await updateDoc(publicNotebookRef(notebook.id), { name, updatedAt: Date.now() });
+    if (notebook.isPublic) await updateDoc(this.publicNotebookRef(notebook.id), { name, updatedAt: Date.now() });
   }
 
   async deleteNotebook(notebook: Notebook, notesInside: Note[], isNotebookPublic: (id: string) => boolean) {
     for (const note of notesInside) await this.deleteNote(note, isNotebookPublic);
-    if (notebook.isPublic) await deleteDoc(publicNotebookRef(notebook.id));
+    if (notebook.isPublic) {
+      await this.purgeNotebookMirror(notebook.id);
+      await deleteDoc(this.publicNotebookRef(notebook.id));
+    }
     await deleteDoc(doc(notebooksCol(this.uid), notebook.id));
   }
 
@@ -87,12 +100,12 @@ export class NotesRepository {
         id: notebook.id, ownerUid: this.uid, authorName: this.user.displayName ?? "익명",
         name: notebook.name, updatedAt: Date.now(),
       };
-      await setDoc(publicNotebookRef(notebook.id), pub);
+      await setDoc(this.publicNotebookRef(notebook.id), pub);
       await runInBatches(notesInside.map((n) => (b) =>
-        b.set(publicNotebookNoteRef(notebook.id, n.id), toPublicNote(this.user, n))));
+        b.set(this.publicNotebookNoteRef(notebook.id, n.id), toPublicNote(this.user, n))));
     } else {
-      await runInBatches(notesInside.map((n) => (b) => b.delete(publicNotebookNoteRef(notebook.id, n.id))));
-      await deleteDoc(publicNotebookRef(notebook.id));
+      await this.purgeNotebookMirror(notebook.id);
+      await deleteDoc(this.publicNotebookRef(notebook.id));
     }
     await updateDoc(doc(notebooksCol(this.uid), notebook.id), { isPublic });
   }
@@ -117,16 +130,16 @@ export class NotesRepository {
     for (const op of ops) {
       switch (op.kind) {
         case "upsertNote":
-          batch.set(publicNoteRef(op.noteId), toPublicNote(this.user, note!));
+          batch.set(this.publicNoteRef(op.noteId), toPublicNote(this.user, note!));
           break;
         case "deleteNote":
-          batch.delete(publicNoteRef(op.noteId));
+          batch.delete(this.publicNoteRef(op.noteId));
           break;
         case "upsertInNotebook":
-          batch.set(publicNotebookNoteRef(op.notebookId, op.noteId), toPublicNote(this.user, note!));
+          batch.set(this.publicNotebookNoteRef(op.notebookId, op.noteId), toPublicNote(this.user, note!));
           break;
         case "deleteInNotebook":
-          batch.delete(publicNotebookNoteRef(op.notebookId, op.noteId));
+          batch.delete(this.publicNotebookNoteRef(op.notebookId, op.noteId));
           break;
       }
     }

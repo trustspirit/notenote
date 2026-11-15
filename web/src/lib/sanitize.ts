@@ -1,11 +1,21 @@
 import DOMPurify from "dompurify";
 
-/** Shared notes are authored by other people — always sanitize before rendering. */
+// Links that open a new tab must not hand the opener (or the reader's URL) to the target.
+DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+  if (node.tagName === "A" && node.getAttribute("target")) node.setAttribute("rel", "noopener noreferrer");
+});
+
+/**
+ * Shared notes are authored by other people — always sanitize before rendering.
+ * The editor never produces images, so <img> is dropped: in a crafted mirror doc it
+ * would only serve as a tracking pixel. `class` is dropped so shared HTML can't
+ * borrow the app's own UI styles.
+ */
 export function sanitizeNoteHtml(html: string): string {
   return DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
-    FORBID_TAGS: ["style", "form", "input", "iframe"],
-    FORBID_ATTR: ["style"],
+    FORBID_TAGS: ["style", "form", "input", "iframe", "img", "picture", "video", "audio", "source"],
+    FORBID_ATTR: ["style", "class"],
     ADD_ATTR: ["data-type", "data-checked", "target"],
   });
 }

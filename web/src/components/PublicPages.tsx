@@ -133,7 +133,7 @@ export function PublicNotebookPage({ notebookId, noteId }: { notebookId: string;
   return (
     <PublicShell sideNav={sideNav} subheading={nb.data.name}>
       {noteId ? (
-        current ? <NoteArticle note={current} /> : (
+        current ? <NoteArticle key={current.id} note={current} /> : (
           <div className="center-screen"><EmptyState title="공유되지 않는 노트" description="이 노트는 더 이상 공유되지 않습니다." /></div>
         )
       ) : (

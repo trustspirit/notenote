@@ -4,6 +4,7 @@ import type { PublicNote, PublicNotebook } from "./types";
 
 /** Read-only access for anonymous visitors of shared links. */
 export const publicRepository = {
+  // Ids below are share ids ("{uid}_{id}") taken from the URL.
   async getNote(noteId: string): Promise<PublicNote | null> {
     const snap = await getDoc(doc(db, "publicNotes", noteId));
     return snap.exists() ? (snap.data() as PublicNote) : null;
@@ -25,7 +26,13 @@ export const publicRepository = {
   },
 };
 
+/**
+ * Public ids embed the owner ("{uid}_{id}") so security rules can tell who may
+ * write behind a link without any lookups. Firestore auto ids never contain "_".
+ */
+export const shareId = (ownerUid: string, id: string) => `${ownerUid}_${id}`;
+
 export const shareUrls = {
-  note: (noteId: string) => `${location.origin}/share/note/${noteId}`,
-  notebook: (notebookId: string) => `${location.origin}/share/notebook/${notebookId}`,
+  note: (ownerUid: string, noteId: string) => `${location.origin}/share/note/${shareId(ownerUid, noteId)}`,
+  notebook: (ownerUid: string, notebookId: string) => `${location.origin}/share/notebook/${shareId(ownerUid, notebookId)}`,
 };

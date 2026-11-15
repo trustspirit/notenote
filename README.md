@@ -24,16 +24,20 @@ Evernote-style rich-text notes with a one-click **정리하기** button (Claude 
 users/{uid}/notebooks/{id}      { name, isPublic, createdAt }                 # private
 users/{uid}/notes/{id}          { notebookId, title, contentHtml, tags, isPublic, ... }
 
-publicNotes/{noteId}                            # mirror of a note shared on its own (get only, not listable)
-publicNotebooks/{notebookId}                    # mirror of a shared notebook (get only)
-publicNotebooks/{notebookId}/notes/{noteId}     # its notes (listable only inside that notebook)
+publicNotes/{uid}_{noteId}                      # mirror of a note shared on its own (get only, not listable)
+publicNotebooks/{uid}_{notebookId}              # mirror of a shared notebook (get only)
+publicNotebooks/{uid}_{notebookId}/notes/{noteId}  # its notes (listable only inside that notebook)
 ```
 
 The client keeps the public mirror in sync on every save (`web/src/lib/sharePlan.ts` decides what to write or delete). Public pages sanitize HTML with DOMPurify before rendering.
 
+Public ids start with the owner's uid, so the security rules can check who may write behind a link
+without lookups: nobody can re-create someone else's (even unshared) link, and large notebooks can be
+shared in one batch.
+
 Share URLs:
-- `/share/note/{noteId}`
-- `/share/notebook/{notebookId}` lists the notebook's notes; `/share/notebook/{notebookId}/{noteId}` opens one note
+- `/share/note/{uid}_{noteId}`
+- `/share/notebook/{uid}_{notebookId}` lists the notebook's notes; `/share/notebook/{uid}_{notebookId}/{noteId}` opens one note
 
 ## Local development (emulators)
 
