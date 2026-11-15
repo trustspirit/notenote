@@ -3,6 +3,21 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
 
+    function ownsPrivate(kind, id) {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)/$(kind)/$(id));
+    }
+
+    // A public mirror may only be written by the owner of the private doc with the same id,
+    // under the owner's real identity. This stops anyone from re-creating an unshared
+    // link's id with their own content (link takeover) or spoofing the author name.
+    function validMirror(kind, id) {
+      let d = request.resource.data;
+      return signedIn()
+        && d.ownerUid == request.auth.uid
+        && d.authorName == request.auth.token.get('name', '익명')
+        && ownsPrivate(kind, id);
+    }
+
     // Private workspace: users/{uid}/notebooks, users/{uid}/notes
     match /users/{uid}/{document=**} {
       allow read, write: if signedIn() && request.auth.uid == uid;
@@ -13,9 +28,8 @@ service cloud.firestore {
     match /publicNotes/{noteId} {
       allow get: if true;
       allow list: if false;
-      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
-      allow update: if signedIn() && resource.data.ownerUid == request.auth.uid
-                    && request.resource.data.ownerUid == request.auth.uid;
+      allow create: if validMirror('notes', noteId);
+      allow update: if resource.data.ownerUid == request.auth.uid && validMirror('notes', noteId);
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
     }
 
@@ -23,9 +37,8 @@ service cloud.firestore {
     match /publicNotebooks/{notebookId} {
       allow get: if true;
       allow list: if false;
-      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
-      allow update: if signedIn() && resource.data.ownerUid == request.auth.uid
-                    && request.resource.data.ownerUid == request.auth.uid;
+      allow create: if validMirror('notebooks', notebookId);
+      allow update: if resource.data.ownerUid == request.auth.uid && validMirror('notebooks', notebookId);
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
       function notebookOwner() {
@@ -35,7 +48,9 @@ service cloud.firestore {
       // Listing is allowed only inside one notebook (you need the notebook link).
       match /notes/{noteId} {
         allow read: if true;
-        allow write: if signedIn() && notebookOwner() == request.auth.uid;
+        allow create, update: if signedIn() && notebookOwner() == request.auth.uid
+                              && validMirror('notes', noteId);
+        allow delete: if signedIn() && notebookOwner() == request.auth.uid;
       }
     }
   }

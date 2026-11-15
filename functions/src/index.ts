@@ -1,10 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "firebase-functions";
-import { defineSecret } from "firebase-functions/params";
+import { initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+import { defineInt, defineSecret, defineString } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { OrganizeError, OrganizeInputSchema, organizeNote } from "./organizer.js";
+import { consumeDailyQuota, isAllowed } from "./quota.js";
+
+initializeApp();
 
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
+// Comma-separated emails allowed to use AI. Empty = every signed-in user.
+const AI_ALLOWED_EMAILS = defineString("AI_ALLOWED_EMAILS", { default: "" });
+// Max AI organize calls per user per UTC day.
+const AI_DAILY_LIMIT = defineInt("AI_DAILY_LIMIT", { default: 30 });
 
 export const organize = onCall(
   {
@@ -19,10 +28,19 @@ export const organize = onCall(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
     }
+    if (!isAllowed(request.auth.token.email, AI_ALLOWED_EMAILS.value())) {
+      throw new HttpsError("permission-denied", "AI 정리 사용 권한이 없는 계정입니다.");
+    }
 
     const parsed = OrganizeInputSchema.safeParse(request.data);
     if (!parsed.success) {
       throw new HttpsError("invalid-argument", parsed.error.issues[0]?.message ?? "invalid input");
+    }
+
+    // Count the call only after the input is valid, so bad requests don't burn quota.
+    const quota = await consumeDailyQuota(getFirestore(), request.auth.uid, AI_DAILY_LIMIT.value());
+    if (!quota.allowed) {
+      throw new HttpsError("resource-exhausted", `오늘 AI 정리 한도(${AI_DAILY_LIMIT.value()}회)를 모두 사용했습니다.`);
     }
 
     const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
