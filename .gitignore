@@ -1,17 +1,35 @@
+# Dependencies & build output
 node_modules/
 dist/
 /functions/lib/
+*.tsbuildinfo
+coverage/
+
+# Secrets & local config (never commit)
 .env.local
 .env.*.local
 .secret.local
+.runtimeconfig.json
 .firebaserc
-*.log
+# Per-project function config (functions/.env.<projectId>) may hold real emails/limits;
+# the committed functions/.env keeps only safe defaults.
+/functions/.env.*
+*.pem
+*service-account*.json
+
+# Firebase / emulator
 .firebase/
+*.log
 firebase-debug.log*
 firestore-debug.log*
 ui-debug.log*
+
+# Tooling & OS
 .DS_Store
+.idea/
+.vscode/
 .playwright-mcp/
+
+# Generated theme previews
 web/themes/*/*.png
 web/themes/*/*.html
-*.tsbuildinfo
