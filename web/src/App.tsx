@@ -1,4 +1,10 @@
+import { Button } from "@astryxdesign/core/Button";
+import { Card } from "@astryxdesign/core/Card";
+import { Heading } from "@astryxdesign/core/Heading";
+import { Text } from "@astryxdesign/core/Text";
+import { VStack } from "@astryxdesign/core/VStack";
 import { lazy, Suspense } from "react";
+import { Loading } from "./components/Loading";
 import { useAuth } from "./hooks/useAuth";
 import { useRoute } from "./router";
 
@@ -7,17 +13,19 @@ const Workspace = lazy(() => import("./components/Workspace").then((m) => ({ def
 const PublicNotePage = lazy(() => import("./components/PublicPages").then((m) => ({ default: m.PublicNotePage })));
 const PublicNotebookPage = lazy(() => import("./components/PublicPages").then((m) => ({ default: m.PublicNotebookPage })));
 
-const Loading = () => <div className="center-screen">불러오는 중…</div>;
-
 function PrivateApp() {
   const { user, loading, signIn, signOut } = useAuth();
   if (loading) return <Loading />;
   if (!user) {
     return (
       <div className="login">
-        <p className="brand big"><span className="brand-mark">¶</span> Marginalia</p>
-        <p className="login-lede">대충 적고, 버튼 하나로 정리하세요.</p>
-        <button type="button" className="primary" onClick={() => void signIn()}>Google로 시작하기</button>
+        <Card>
+          <VStack gap={4} padding={6} hAlign="start">
+            <Heading level={1}>Pensieve</Heading>
+            <Text type="large" color="secondary">머릿속 생각을 꺼내 담고, 버튼 하나로 정리하세요.</Text>
+            <Button label="Google로 시작하기" variant="primary" size="lg" width="100%" onClick={() => void signIn()} />
+          </VStack>
+        </Card>
       </div>
     );
   }

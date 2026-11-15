@@ -1,4 +1,4 @@
-# Marginalia (smart-notes)
+# Pensieve (smart-notes)
 
 Evernote-style rich-text notes with a one-click **✦ AI로 정리** button (Claude via the Anthropic API), plus read-only public sharing of single notes and whole notebooks.
 

@@ -1,3 +1,9 @@
+import { Button } from "@astryxdesign/core/Button";
+import { Icon } from "@astryxdesign/core/Icon";
+import { HStack } from "@astryxdesign/core/HStack";
+import { Switch } from "@astryxdesign/core/Switch";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { VStack } from "@astryxdesign/core/VStack";
 import { useState } from "react";
 
 interface Props {
@@ -12,9 +18,9 @@ export function ShareToggle({ isPublic, url, label, onToggle }: Props) {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  async function toggle() {
+  async function toggle(next: boolean) {
     setBusy(true);
-    try { await onToggle(!isPublic); } finally { setBusy(false); }
+    try { await onToggle(next); } finally { setBusy(false); }
   }
 
   async function copy() {
@@ -24,18 +30,21 @@ export function ShareToggle({ isPublic, url, label, onToggle }: Props) {
   }
 
   return (
-    <div className="share">
-      <label className="switch">
-        <input type="checkbox" checked={isPublic} disabled={busy} onChange={toggle} />
-        <span>{isPublic ? `${label} 공개 중 · 읽기 전용` : `${label} 비공개`}</span>
-      </label>
+    <VStack gap={2}>
+      <Switch
+        label={`${label} 공개 공유`}
+        description={isPublic ? "링크가 있는 누구나 읽을 수 있어요 (읽기 전용)" : "나만 볼 수 있어요"}
+        value={isPublic}
+        isLoading={busy}
+        onChange={(checked) => void toggle(checked)}
+      />
       {isPublic && (
-        <div className="share-link">
-          <input readOnly value={url} onFocus={(e) => e.currentTarget.select()} />
-          <button type="button" onClick={copy}>{copied ? "복사됨" : "링크 복사"}</button>
-          <a href={url} target="_blank" rel="noreferrer">열기 ↗</a>
-        </div>
+        <HStack gap={2} vAlign="center">
+          <TextInput label="공유 링크" isLabelHidden isReadOnly value={url} size="sm" width="100%" />
+          <Button label={copied ? "복사됨" : "링크 복사"} icon={<Icon icon={copied ? "checkDouble" : "copy"} />} size="sm" onClick={() => void copy()} />
+          <Button label="열기" icon={<Icon icon="externalLink" />} size="sm" variant="ghost" href={url} target="_blank" rel="noreferrer" />
+        </HStack>
       )}
-    </div>
+    </VStack>
   );
 }

@@ -12,3 +12,5 @@ firestore-debug.log*
 ui-debug.log*
 .DS_Store
 .playwright-mcp/
+web/themes/*/*.png
+web/themes/*/*.html

@@ -1,21 +1,23 @@
-import type { User } from "firebase/auth";
-import { shareUrls } from "../lib/publicRepository";
+import { Badge } from "@astryxdesign/core/Badge";
+import { HStack } from "@astryxdesign/core/HStack";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
+import { Text } from "@astryxdesign/core/Text";
+import { Token } from "@astryxdesign/core/Token";
 import type { Note, Notebook } from "../lib/types";
-import { ShareToggle } from "./ShareToggle";
 
 export type Filter = { kind: "all" } | { kind: "notebook"; id: string } | { kind: "tag"; tag: string };
 
 interface Props {
-  user: User;
   notebooks: Notebook[];
   notes: Note[];
   filter: Filter;
   onFilter: (f: Filter) => void;
   onCreateNotebook: () => void;
-  onRenameNotebook: (nb: Notebook) => void;
-  onDeleteNotebook: (nb: Notebook) => void;
-  onShareNotebook: (nb: Notebook, isPublic: boolean) => Promise<void>;
-  onSignOut: () => void;
+}
+
+function Count({ n }: { n: number }) {
+  return <Text type="supporting" hasTabularNumbers>{n}</Text>;
 }
 
 export function Sidebar(p: Props) {
@@ -26,77 +28,53 @@ export function Sidebar(p: Props) {
     for (const t of n.tags) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
   }
   const f = p.filter;
-  const selectedNb = f.kind === "notebook" ? p.notebooks.find((nb) => nb.id === f.id) : undefined;
 
   return (
-    <nav className="sidebar">
-      <div className="brand">
-        <span className="brand-mark">¶</span> Marginalia
-      </div>
+    <SideNav>
+      <SideNavSection title="노트" isHeaderHidden>
+        <SideNavItem
+          label="모든 노트"
+          isSelected={f.kind === "all"}
+          onClick={() => p.onFilter({ kind: "all" })}
+          endContent={<Count n={p.notes.length} />}
+        />
+      </SideNavSection>
 
-      <button
-        type="button"
-        className={`side-item ${p.filter.kind === "all" ? "on" : ""}`}
-        onClick={() => p.onFilter({ kind: "all" })}
+      <SideNavSection
+        title="노트북"
+        endContent={<IconButton label="새 노트북" tooltip="새 노트북" icon={<span className="glyph">＋</span>} size="sm" variant="ghost" onClick={p.onCreateNotebook} />}
       >
-        모든 노트 <span className="count">{p.notes.length}</span>
-      </button>
-
-      <div className="side-heading">
-        노트북
-        <button type="button" className="ghost small" onClick={p.onCreateNotebook} title="새 노트북">＋</button>
-      </div>
-      {p.notebooks.map((nb) => (
-        <button
-          type="button"
-          key={nb.id}
-          className={`side-item ${selectedNb?.id === nb.id ? "on" : ""}`}
-          onClick={() => p.onFilter({ kind: "notebook", id: nb.id })}
-          onDoubleClick={() => p.onRenameNotebook(nb)}
-        >
-          {nb.name}
-          {nb.isPublic && <span className="public-dot" title="공개 중">공개</span>}
-          <span className="count">{counts.get(nb.id) ?? 0}</span>
-        </button>
-      ))}
-
-      {selectedNb && (
-        <div className="notebook-panel">
-          <ShareToggle
-            label="노트북"
-            isPublic={selectedNb.isPublic}
-            url={shareUrls.notebook(selectedNb.id)}
-            onToggle={(next) => p.onShareNotebook(selectedNb, next)}
+        {p.notebooks.map((nb) => (
+          <SideNavItem
+            key={nb.id}
+            label={nb.name}
+            isSelected={f.kind === "notebook" && f.id === nb.id}
+            onClick={() => p.onFilter({ kind: "notebook", id: nb.id })}
+            endContent={
+              <HStack gap={1} vAlign="center">
+                {nb.isPublic && <Badge variant="blue" label="공개" />}
+                <Count n={counts.get(nb.id) ?? 0} />
+              </HStack>
+            }
           />
-          <div className="row">
-            <button type="button" className="ghost small" onClick={() => p.onRenameNotebook(selectedNb)}>이름 변경</button>
-            <button type="button" className="ghost small danger" onClick={() => p.onDeleteNotebook(selectedNb)}>삭제</button>
-          </div>
-        </div>
-      )}
+        ))}
+      </SideNavSection>
 
       {tagCounts.size > 0 && (
-        <>
-          <div className="side-heading">태그</div>
-          <div className="side-tags">
+        <SideNavSection title="태그">
+          <HStack gap={1} wrap="wrap" paddingInline={2}>
             {[...tagCounts.entries()].sort((a, b) => b[1] - a[1]).map(([tag, c]) => (
-              <button
-                type="button"
+              <Token
                 key={tag}
-                className={`tag ${p.filter.kind === "tag" && p.filter.tag === tag ? "on" : ""}`}
+                size="sm"
+                label={`#${tag} ${c}`}
+                color={f.kind === "tag" && f.tag === tag ? "blue" : "default"}
                 onClick={() => p.onFilter({ kind: "tag", tag })}
-              >
-                #{tag} <small>{c}</small>
-              </button>
+              />
             ))}
-          </div>
-        </>
+          </HStack>
+        </SideNavSection>
       )}
-
-      <div className="sidebar-foot">
-        <span>{p.user.displayName ?? p.user.email}</span>
-        <button type="button" className="ghost small" onClick={p.onSignOut}>로그아웃</button>
-      </div>
-    </nav>
+    </SideNav>
   );
 }

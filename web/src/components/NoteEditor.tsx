@@ -1,3 +1,11 @@
+import { Badge } from "@astryxdesign/core/Badge";
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
+import { Card } from "@astryxdesign/core/Card";
+import { HStack } from "@astryxdesign/core/HStack";
+import { Selector } from "@astryxdesign/core/Selector";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { Token } from "@astryxdesign/core/Token";
 import Highlight from "@tiptap/extension-highlight";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import TextAlign from "@tiptap/extension-text-align";
@@ -25,6 +33,7 @@ interface Snapshot { title: string; html: string; tags: string[] }
 const STATUS_TEXT: Record<SaveStatus, string> = {
   saved: "저장됨", dirty: "편집 중…", saving: "저장 중…", error: "저장 실패 · 다시 시도",
 };
+const STATUS_BADGE = { saved: "success", dirty: "neutral", saving: "info", error: "error" } as const;
 
 export const editorExtensions = [
   StarterKit.configure({ link: { openOnClick: false, autolink: true } }),
@@ -112,8 +121,10 @@ export function NoteEditor({ note, notebooks, onSave, onDelete }: Props) {
     setAiState({ busy: false });
   }
 
+  const [tagDraft, setTagDraft] = useState("");
   function addTag(raw: string) {
     const tag = raw.trim().replace(/^#/, "").toLowerCase();
+    setTagDraft("");
     if (!tag || tags.includes(tag)) return;
     change(setTags)([...tags, tag]);
   }
@@ -122,72 +133,93 @@ export function NoteEditor({ note, notebooks, onSave, onDelete }: Props) {
 
   return (
     <article className="editor">
-      <header className="editor-meta">
-        <select
+      <HStack gap={2} vAlign="center" wrap="wrap" className="editor-meta">
+        <Selector
+          label="노트북"
+          isLabelHidden
+          size="sm"
+          width={180}
           value={notebookId}
-          onChange={(e) => change(setNotebookId)(e.target.value)}
-          aria-label="노트북"
-        >
-          {notebooks.map((nb) => <option key={nb.id} value={nb.id}>{nb.name}</option>)}
-        </select>
-        <span className={`save-status ${autosave.status}`}>{STATUS_TEXT[autosave.status]}</span>
+          options={notebooks.map((nb) => ({ value: nb.id, label: nb.name }))}
+          onChange={(v) => change(setNotebookId)(v)}
+        />
+        <Badge variant={STATUS_BADGE[autosave.status]} label={STATUS_TEXT[autosave.status]} />
         <div className="spacer" />
-        <button
-          type="button"
-          className="ai-button"
-          onClick={organize}
-          disabled={aiState.busy || editor.isEmpty}
-          title="Claude가 노트를 구조화하고 다듬어 저장합니다"
-        >
-          {aiState.busy ? "정리하는 중…" : "✦ AI로 정리"}
-        </button>
-        <button type="button" className="ghost danger" onClick={() => onDelete(lastSaved.current)}>삭제</button>
-      </header>
+        <Button
+          label={aiState.busy ? "정리하는 중…" : "AI로 정리"}
+          icon={<span className="glyph">✦</span>}
+          variant="primary"
+          isLoading={aiState.busy}
+          isDisabled={editor.isEmpty}
+          tooltip="Claude가 노트를 구조화하고 다듬어 저장합니다"
+          onClick={() => void organize()}
+        />
+        <Button label="삭제" variant="ghost" onClick={() => onDelete(lastSaved.current)} />
+      </HStack>
 
       {aiState.undo && (
-        <div className="banner">
-          <span>AI가 정리해서 저장했어요. {aiState.summary}</span>
-          <button type="button" onClick={undoOrganize}>원래대로</button>
-          <button type="button" className="ghost" onClick={() => setAiState({ busy: false })}>닫기</button>
-        </div>
+        <Banner
+          status="success"
+          title="AI가 정리해서 저장했어요"
+          description={aiState.summary}
+          isDismissable
+          dismissLabel="닫기"
+          onDismiss={() => setAiState({ busy: false })}
+          endContent={<Button label="원래대로" size="sm" onClick={() => void undoOrganize()} />}
+        />
       )}
       {aiState.error && (
-        <div className="banner error">
-          <span>{aiState.error}</span>
-          <button type="button" className="ghost" onClick={() => setAiState({ busy: false })}>닫기</button>
-        </div>
+        <Banner
+          status="error"
+          title="정리하지 못했어요"
+          description={aiState.error}
+          isDismissable
+          dismissLabel="닫기"
+          onDismiss={() => setAiState({ busy: false })}
+        />
       )}
 
       <input
         className="title-input"
         value={title}
         placeholder="제목 없음"
+        aria-label="제목"
         onChange={(e) => change(setTitle)(e.target.value)}
       />
 
-      <div className="tags">
+      <HStack gap={1} vAlign="center" wrap="wrap" className="tags">
         {tags.map((t) => (
-          <button key={t} type="button" className="tag" onClick={() => change(setTags)(tags.filter((x) => x !== t))} title="태그 제거">
-            #{t} ×
-          </button>
+          <Token
+            key={t}
+            label={`#${t}`}
+            size="sm"
+            color="blue"
+            onRemove={() => change(setTags)(tags.filter((x) => x !== t))}
+          />
         ))}
-        <input
-          className="tag-input"
-          placeholder="+ 태그"
+        <TextInput
+          label="태그 추가"
+          isLabelHidden
+          size="sm"
+          width={140}
+          placeholder="+ 태그 (Enter)"
+          value={tagDraft}
+          onChange={setTagDraft}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === ",") {
               e.preventDefault();
-              addTag(e.currentTarget.value);
-              e.currentTarget.value = "";
+              addTag(tagDraft);
             }
           }}
         />
-      </div>
+      </HStack>
 
-      <Toolbar editor={editor} />
-      <EditorContent editor={editor} className="prose editor-body" />
+      <Card padding={0}>
+        <Toolbar editor={editor} />
+        <EditorContent editor={editor} className="prose editor-body" />
+      </Card>
 
-      <footer className="editor-footer">
+      <Card padding={4} className="editor-footer">
         <ShareToggle
           label="이 노트"
           isPublic={isPublic}
@@ -200,7 +232,7 @@ export function NoteEditor({ note, notebooks, onSave, onDelete }: Props) {
             await autosave.flush();
           }}
         />
-      </footer>
+      </Card>
     </article>
   );
 }
