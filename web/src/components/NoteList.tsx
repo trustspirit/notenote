@@ -57,7 +57,7 @@ export function NoteList(p: Props) {
                 <HStack gap={1} vAlign="center">
                   <Text weight="semibold" maxLines={1}>{n.title || "제목 없음"}</Text>
                   {n.isPublic && <Badge variant="blue" label="공개" />}
-                  {n.aiOrganizedAt && <Badge variant="purple" label="✦ AI" />}
+                  {n.aiOrganizedAt && <Badge variant="neutral" label="정리됨" />}
                 </HStack>
                 <Text type="supporting" maxLines={2}>{excerpt(n.contentHtml) || "내용 없음"}</Text>
                 <Text type="supporting" size="2xs">{formatDate(n.updatedAt)}</Text>

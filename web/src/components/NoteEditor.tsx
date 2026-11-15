@@ -14,6 +14,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import { Placeholder } from "@tiptap/extensions";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { ListTree } from "lucide-react";
 import { useRef, useState } from "react";
 import { useAutosave, type SaveStatus } from "../hooks/useAutosave";
 import { organizeWithAI } from "../lib/organizeApi";
@@ -45,7 +46,7 @@ export const editorExtensions = [
   TaskList,
   TaskItem.configure({ nested: true }),
   TextAlign.configure({ types: ["heading", "paragraph"] }),
-  Placeholder.configure({ placeholder: "생각나는 대로 적어두세요. 정리는 나중에 AI에게 맡겨도 됩니다." }),
+  Placeholder.configure({ placeholder: "생각나는 대로 적어두세요. 정리는 나중에 해도 돼요." }),
 ];
 
 /** Mount with `key={note.id}` so switching notes resets all local state. */
@@ -159,12 +160,12 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
         <Badge variant={STATUS_BADGE[autosave.status]} label={STATUS_TEXT[autosave.status]} />
         <div className="spacer" />
         <Button
-          label={aiState.busy ? "정리하는 중…" : "AI로 정리"}
-          icon={<span className="glyph">✦</span>}
-          variant="primary"
+          label={aiState.busy ? "정리하는 중…" : "정리하기"}
+          icon={<ListTree size={16} strokeWidth={2} aria-hidden />}
+          variant="secondary"
           isLoading={aiState.busy}
           isDisabled={editor.isEmpty}
-          tooltip="Claude가 노트를 구조화하고 다듬어 저장합니다"
+          tooltip="제목·문단·목록을 정돈해서 다시 저장해요"
           onClick={() => void organize()}
         />
         <Button label="삭제" variant="ghost" onClick={() => onDelete(lastSaved.current)} />
@@ -173,7 +174,7 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
       {aiState.undo && (
         <Banner
           status="success"
-          title="AI가 정리해서 저장했어요"
+          title="노트를 정리했어요"
           description={aiState.summary}
           isDismissable
           dismissLabel="닫기"

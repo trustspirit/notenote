@@ -1,6 +1,6 @@
 # Pensieve (smart-notes)
 
-Evernote-style rich-text notes with a one-click **✦ AI로 정리** button (Claude via the Anthropic API), plus read-only public sharing of single notes and whole notebooks.
+Evernote-style rich-text notes with a one-click **정리하기** button (Claude via the Anthropic API), plus read-only public sharing of single notes and whole notebooks.
 
 - **Web**: Vite + React + TipTap (rich text: headings, bold/italic/underline/strike, highlight, lists, checklists, quotes, code blocks, links, alignment)
 - **Backend (Firebase, Google)**: Auth (Google sign-in), Firestore, Cloud Functions v2 (`organize`), Hosting
