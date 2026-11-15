@@ -8,7 +8,7 @@ import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import type { User } from "firebase/auth";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useDriveBackup } from "../hooks/useDriveBackup";
 import { useWorkspace } from "../hooks/useWorkspace";
 import { shareUrls } from "../lib/publicRepository";
@@ -18,7 +18,7 @@ import { useDialogs } from "./Dialogs";
 import { DriveBackupButton } from "./DriveBackup";
 import { Loading } from "./Loading";
 import { LogoMark } from "./Logo";
-import { NoteEditor } from "./NoteEditor";
+import { NoteEditor, type EditorControl } from "./NoteEditor";
 import { NoteList } from "./NoteList";
 import { ShareToggle } from "./ShareToggle";
 import { Sidebar, type Filter } from "./Sidebar";
@@ -27,6 +27,7 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
   const { repo, notebooks, notes, loading, isNotebookPublic } = useWorkspace(user);
   const backup = useDriveBackup(user, notes, notebooks, !loading);
   const dialogs = useDialogs();
+  const editorControl = useRef<EditorControl | null>(null);
   const [filter, setFilter] = useState<Filter>({ kind: "all" });
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -71,6 +72,8 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
       actionLabel: "삭제",
     });
     if (!ok) return;
+    // Drop pending edits first, or the editor's unmount save would re-create the note.
+    if (editorControl.current?.noteId === note.id) editorControl.current.discard();
     setSelectedId(null);
     await repo.deleteNote(note, isNotebookPublic);
   }
@@ -99,9 +102,18 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
       actionLabel: "모두 삭제",
     });
     if (!ok) return;
+    const open = editorControl.current;
+    if (open && inside.some((n) => n.id === open.noteId)) open.discard();
+    else await open?.flush();
     setFilter({ kind: "all" });
     setSelectedId(null);
     await repo.deleteNotebook(nb, inside, isNotebookPublic);
+  }
+
+  // Save the open note while still signed in: after sign-out the rules reject the write.
+  async function signOut() {
+    await editorControl.current?.flush();
+    onSignOut();
   }
 
   if (loading) return <Loading />;
@@ -114,7 +126,7 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
         <HStack gap={2} vAlign="center">
           <DriveBackupButton backup={backup} isCompact={isNarrow} />
           {!isNarrow && <Text type="supporting">{user.displayName ?? user.email}</Text>}
-          <Button label="로그아웃" size="sm" variant="ghost" onClick={onSignOut} />
+          <Button label="로그아웃" size="sm" variant="ghost" onClick={() => void signOut()} />
         </HStack>
       }
     />
@@ -125,7 +137,7 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
       <ShareToggle
         label="노트북"
         isPublic={selectedNb.isPublic}
-        url={shareUrls.notebook(selectedNb.id)}
+        url={shareUrls.notebook(user.uid, selectedNb.id)}
         onToggle={(next) => repo.setNotebookPublic(selectedNb, next, notes.filter((n) => n.notebookId === selectedNb.id))}
       />
       <HStack gap={1}>
@@ -153,6 +165,8 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
     <NoteEditor
       key={selected.id}
       note={selected}
+      ownerUid={user.uid}
+      controlRef={editorControl}
       notebooks={notebooks}
       onSave={(prev, next) => repo.saveNote(prev, next, isNotebookPublic)}
       onDelete={(n) => void deleteNote(n)}

@@ -15,7 +15,7 @@ import { Placeholder } from "@tiptap/extensions";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ListTree } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { useAutosave, type SaveStatus } from "../hooks/useAutosave";
 import { createMindmap, mindmapToHtml, type MindNode } from "../lib/mindmap";
 import { organizeWithAI } from "../lib/organizeApi";
@@ -28,17 +28,27 @@ import { Toolbar } from "./Toolbar";
 
 interface Props {
   note: Note;
+  /** For the note's public link (share ids are owner-prefixed). */
+  ownerUid: string;
   notebooks: Notebook[];
   onSave: (prev: Note, next: Note) => Promise<void>;
   onDelete: (note: Note) => void;
   /** Narrow screens: go back to the note list. */
   onBack?: () => void;
+  /** Lets the workspace save or drop pending edits before sign-out / deletes. */
+  controlRef?: MutableRefObject<EditorControl | null>;
+}
+
+export interface EditorControl {
+  noteId: string;
+  flush: () => Promise<boolean>;
+  discard: () => void;
 }
 
 interface Snapshot { title: string; html: string; tags: string[] }
 
 const STATUS_TEXT: Record<SaveStatus, string> = {
-  saved: "저장됨", dirty: "편집 중…", saving: "저장 중…", error: "저장 실패 · 다시 시도",
+  saved: "저장됨", dirty: "편집 중…", saving: "저장 중…", error: "저장 실패 · 재시도 중",
 };
 const STATUS_BADGE = { saved: "success", dirty: "neutral", saving: "info", error: "error" } as const;
 
@@ -52,7 +62,7 @@ export const editorExtensions = [
 ];
 
 /** Mount with `key={note.id}` so switching notes resets all local state. */
-export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props) {
+export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack, controlRef }: Props) {
   const [title, setTitle] = useState(note.title);
   const [tags, setTags] = useState<string[]>(note.tags);
   const [notebookId, setNotebookId] = useState(note.notebookId);
@@ -89,10 +99,22 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
         : { contentHtml: editor.getHTML() }),
       updatedAt: Date.now(),
     };
+    const sent = pending.current;
     pending.current = {};
-    await onSave(lastSaved.current, next);
+    try {
+      await onSave(lastSaved.current, next);
+    } catch (err) {
+      pending.current = { ...sent, ...pending.current }; // keep e.g. aiOrganizedAt for the retry
+      throw err;
+    }
     lastSaved.current = next;
   });
+
+  useEffect(() => {
+    if (!controlRef) return;
+    controlRef.current = { noteId: note.id, flush: autosave.flush, discard: autosave.discard };
+    return () => { controlRef.current = null; };
+  }, [controlRef, note.id, autosave.flush, autosave.discard]);
 
   // Debounced save runs after the re-render, so `fields` already holds the new value.
   function change<T>(setter: (v: T) => void) {
@@ -107,6 +129,8 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
     await autosave.flush();
     const before: Snapshot = { title: fields.current.title, html: editor.getHTML(), tags: fields.current.tags };
     setAiState({ busy: true });
+    // The result replaces the whole note, so freeze it meanwhile: edits made now would be lost.
+    editor.setEditable(false);
     try {
       const result = await organizeWithAI(before.title, before.html);
       editor.commands.setContent(sanitizeNoteHtml(result.html), { emitUpdate: false });
@@ -119,6 +143,8 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
       setAiState({ busy: false, undo: before, summary: result.summary });
     } catch (err) {
       setAiState({ busy: false, error: err instanceof Error ? err.message : "정리에 실패했습니다." });
+    } finally {
+      editor.setEditable(true);
     }
   }
 
@@ -206,6 +232,7 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
         value={title}
         placeholder="제목 없음"
         aria-label="제목"
+        readOnly={aiState.busy}
         onChange={(e) => change(setTitle)(e.target.value)}
       />
 
@@ -216,7 +243,7 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
             label={`#${t}`}
             size="sm"
             color="blue"
-            onRemove={() => change(setTags)(tags.filter((x) => x !== t))}
+            onRemove={aiState.busy ? undefined : () => change(setTags)(tags.filter((x) => x !== t))}
           />
         ))}
         <TextInput
@@ -225,6 +252,7 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
           size="sm"
           width={140}
           placeholder="+ 태그 (Enter)"
+          isDisabled={aiState.busy}
           value={tagDraft}
           onChange={setTagDraft}
           onKeyDown={(e) => {
@@ -253,13 +281,17 @@ export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props)
         <ShareToggle
           label="이 노트"
           isPublic={isPublic}
-          url={shareUrls.note(note.id)}
+          url={shareUrls.note(ownerUid, note.id)}
           onToggle={async (next) => {
             // Save right away (not debounced) so the link works the moment it's shown.
             setIsPublic(next);
             fields.current = { ...fields.current, isPublic: next };
             autosave.schedule();
-            await autosave.flush();
+            if (!(await autosave.flush())) {
+              // Not saved, so no mirror exists: don't show a link that would 404.
+              setIsPublic(!next);
+              fields.current = { ...fields.current, isPublic: !next };
+            }
           }}
         />
       </Card>
