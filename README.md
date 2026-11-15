@@ -95,7 +95,7 @@ the top bar shows **Drive 다시 연결**, one click to resume.
 
 ```bash
 (cd functions && npm test)   # organizer parsing, share plan, mirror/index helpers
-(cd web && npm test)         # router, mind-map layout, Drive backup plan/markdown
+(cd web && npm test)         # router, mind-map layout, Drive backup, autosave (debounce/retry/serialization)
 (cd functions && npm run test:emulator)   # rules + mirror triggers end to end (starts its own emulators;
                                           # stop a running `emulators:start` first, ports are shared)
 ```
