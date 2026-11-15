@@ -73,4 +73,4 @@ jobs:
           service_account: github-deployer@pensieve-smart-notes.iam.gserviceaccount.com
       - name: Deploy
         # --force: the Firestore mirror triggers intentionally use retry: true
-        run: npx --yes firebase-tools@15 deploy --only firestore,functions,hosting --project "$FIREBASE_PROJECT_ID" --force --non-interactive --debug
+        run: npx --yes firebase-tools@15 deploy --only firestore,functions,hosting --project "$FIREBASE_PROJECT_ID" --force --non-interactive
