@@ -62,11 +62,29 @@ Emulator ports are 9299 (auth), 8181 (firestore), 5101 (functions) and 4100 (UI)
    ```
 6. Add your hosting domain under Authentication → Settings → Authorized domains if you use a custom domain.
 
+## Google Drive backup (optional)
+
+Signed-in users can turn on a one-way backup of every note to their own Google Drive:
+`My Drive/Pensieve/<notebook>/<note title>.md` (Markdown with YAML front matter; mind maps become nested lists).
+Firestore stays the source of truth. Only changed notes are uploaded, a few seconds after edits settle;
+deleted notes go to the Drive trash. The app uses the `drive.file` scope, so it can only see files it created.
+
+Setup (Google Cloud console of the same project):
+1. **APIs & Services → Library**: enable **Google Drive API**.
+2. **OAuth consent screen**: add the scope `.../auth/drive.file` (non-sensitive, no verification review needed).
+   While the app is in *Testing*, add your account as a test user, or publish it.
+3. **Credentials**: open the OAuth *Web client* (Firebase auto-creates one for Google sign-in) and add your
+   origins (e.g. `https://<project>.web.app`, `http://localhost:5173`) under **Authorized JavaScript origins**.
+4. Put its client ID in `web/.env.local` as `VITE_GOOGLE_CLIENT_ID`. Without it the backup button is hidden.
+
+The Drive token comes from Google Identity Services and lasts about an hour; after that (or after a reload)
+the top bar shows **Drive 다시 연결**, one click to resume.
+
 ## Tests
 
 ```bash
 (cd functions && npm test)   # organizer: output parsing, refusal/truncation handling, tag normalization
-(cd web && npm test)         # share sync plan, router
+(cd web && npm test)         # share sync plan, router, mind-map layout, Drive backup plan/markdown
 ```
 
 ## Customizing the AI organizer

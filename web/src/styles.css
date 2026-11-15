@@ -166,3 +166,7 @@ body { background: var(--color-background-body); }
 .mm-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--color-border, #dde3e8); }
 @media (prefers-reduced-motion: reduce) { .mm-node { transition: none; } }
 .mm-outline summary { cursor: pointer; color: var(--color-text-secondary, #465a69); font-size: 14px; padding: 8px 0; }
+
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }

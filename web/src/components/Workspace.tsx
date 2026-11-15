@@ -9,11 +9,13 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import type { User } from "firebase/auth";
 import { useMemo, useState } from "react";
+import { useDriveBackup } from "../hooks/useDriveBackup";
 import { useWorkspace } from "../hooks/useWorkspace";
 import { shareUrls } from "../lib/publicRepository";
 import { createMindmap, mindmapToHtml } from "../lib/mindmap";
 import type { Note, Notebook, NoteKind } from "../lib/types";
 import { useDialogs } from "./Dialogs";
+import { DriveBackupButton } from "./DriveBackup";
 import { Loading } from "./Loading";
 import { LogoMark } from "./Logo";
 import { NoteEditor } from "./NoteEditor";
@@ -23,6 +25,7 @@ import { Sidebar, type Filter } from "./Sidebar";
 
 export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   const { repo, notebooks, notes, loading, isNotebookPublic } = useWorkspace(user);
+  const backup = useDriveBackup(user, notes, notebooks, !loading);
   const dialogs = useDialogs();
   const [filter, setFilter] = useState<Filter>({ kind: "all" });
   const [search, setSearch] = useState("");
@@ -109,6 +112,7 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
       heading={<TopNavHeading logo={<LogoMark />} heading="Pensieve" />}
       endContent={
         <HStack gap={2} vAlign="center">
+          <DriveBackupButton backup={backup} isCompact={isNarrow} />
           {!isNarrow && <Text type="supporting">{user.displayName ?? user.email}</Text>}
           <Button label="로그아웃" size="sm" variant="ghost" onClick={onSignOut} />
         </HStack>
