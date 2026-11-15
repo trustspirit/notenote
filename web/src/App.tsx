@@ -1,10 +1,11 @@
-import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { lazy, Suspense } from "react";
+import { GoogleSignInButton } from "./components/GoogleSignInButton";
 import { Loading } from "./components/Loading";
+import { LogoMark } from "./components/Logo";
 import { useAuth } from "./hooks/useAuth";
 import { useRoute } from "./router";
 
@@ -21,9 +22,10 @@ function PrivateApp() {
       <div className="login">
         <Card>
           <VStack gap={4} padding={6} hAlign="start">
+            <LogoMark size={44} />
             <Heading level={1}>Pensieve</Heading>
             <Text type="large" color="secondary">머릿속 생각을 꺼내 담고, 버튼 하나로 정리하세요.</Text>
-            <Button label="Google로 시작하기" variant="primary" size="lg" width="100%" onClick={() => void signIn()} />
+            <GoogleSignInButton onClick={() => void signIn()} />
           </VStack>
         </Card>
       </div>

@@ -3,6 +3,8 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { HStack } from "@astryxdesign/core/HStack";
+import { Icon } from "@astryxdesign/core/Icon";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import { Selector } from "@astryxdesign/core/Selector";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
@@ -26,6 +28,8 @@ interface Props {
   notebooks: Notebook[];
   onSave: (prev: Note, next: Note) => Promise<void>;
   onDelete: (note: Note) => void;
+  /** Narrow screens: go back to the note list. */
+  onBack?: () => void;
 }
 
 interface Snapshot { title: string; html: string; tags: string[] }
@@ -45,7 +49,7 @@ export const editorExtensions = [
 ];
 
 /** Mount with `key={note.id}` so switching notes resets all local state. */
-export function NoteEditor({ note, notebooks, onSave, onDelete }: Props) {
+export function NoteEditor({ note, notebooks, onSave, onDelete, onBack }: Props) {
   const [title, setTitle] = useState(note.title);
   const [tags, setTags] = useState<string[]>(note.tags);
   const [notebookId, setNotebookId] = useState(note.notebookId);
@@ -134,6 +138,15 @@ export function NoteEditor({ note, notebooks, onSave, onDelete }: Props) {
   return (
     <article className="editor">
       <HStack gap={2} vAlign="center" wrap="wrap" className="editor-meta">
+        {onBack && (
+          <IconButton
+            label="목록으로"
+            tooltip="목록으로"
+            variant="ghost"
+            icon={<Icon icon="chevronLeft" />}
+            onClick={() => { void autosave.flush(); onBack(); }}
+          />
+        )}
         <Selector
           label="노트북"
           isLabelHidden

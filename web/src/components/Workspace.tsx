@@ -6,6 +6,7 @@ import { Layout, LayoutContent, LayoutPanel } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
 import { VStack } from "@astryxdesign/core/VStack";
+import { useMediaQuery } from "@astryxdesign/core/hooks";
 import type { User } from "firebase/auth";
 import { useMemo, useState } from "react";
 import { useWorkspace } from "../hooks/useWorkspace";
@@ -13,6 +14,7 @@ import { shareUrls } from "../lib/publicRepository";
 import type { Note, Notebook } from "../lib/types";
 import { useDialogs } from "./Dialogs";
 import { Loading } from "./Loading";
+import { LogoMark } from "./Logo";
 import { NoteEditor } from "./NoteEditor";
 import { NoteList } from "./NoteList";
 import { ShareToggle } from "./ShareToggle";
@@ -24,6 +26,8 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
   const [filter, setFilter] = useState<Filter>({ kind: "all" });
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Below 900px the list and the editor share one column: list first, editor after a pick.
+  const isNarrow = useMediaQuery("(max-width: 899px)");
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -96,10 +100,10 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
   const topNav = (
     <TopNav
       label="상단 메뉴"
-      heading={<TopNavHeading heading="Pensieve" />}
+      heading={<TopNavHeading logo={<LogoMark />} heading="Pensieve" />}
       endContent={
         <HStack gap={2} vAlign="center">
-          <Text type="supporting">{user.displayName ?? user.email}</Text>
+          {!isNarrow && <Text type="supporting">{user.displayName ?? user.email}</Text>}
           <Button label="로그아웃" size="sm" variant="ghost" onClick={onSignOut} />
         </HStack>
       }
@@ -121,6 +125,38 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
     </VStack>
   );
 
+  const listView = (
+    <NoteList
+      heading={heading}
+      notes={visible}
+      selectedId={selectedId}
+      search={search}
+      onSearch={setSearch}
+      onSelect={setSelectedId}
+      onCreate={() => void createNote()}
+      headerExtra={notebookControls}
+    />
+  );
+
+  const editorView = selected ? (
+    <NoteEditor
+      key={selected.id}
+      note={selected}
+      notebooks={notebooks}
+      onSave={(prev, next) => repo.saveNote(prev, next, isNotebookPublic)}
+      onDelete={(n) => void deleteNote(n)}
+      onBack={isNarrow ? () => setSelectedId(null) : undefined}
+    />
+  ) : (
+    <div className="center-screen">
+      <EmptyState
+        title="노트를 선택하세요"
+        description="왼쪽 목록에서 노트를 고르거나 새로 만들어 보세요."
+        actions={<Button label="새 노트" variant="primary" onClick={() => void createNote()} />}
+      />
+    </div>
+  );
+
   return (
     <AppShell
       topNav={topNav}
@@ -134,43 +170,24 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
         />
       }
     >
-      <Layout
-        start={
-          <LayoutPanel width={340} hasDivider isScrollable padding={4} label="노트 목록">
-            <NoteList
-              heading={heading}
-              notes={visible}
-              selectedId={selectedId}
-              search={search}
-              onSearch={setSearch}
-              onSelect={setSelectedId}
-              onCreate={() => void createNote()}
-              headerExtra={notebookControls}
-            />
-          </LayoutPanel>
-        }
-        content={
-          <LayoutContent isScrollable padding={0} label="편집기">
-            {selected ? (
-              <NoteEditor
-                key={selected.id}
-                note={selected}
-                notebooks={notebooks}
-                onSave={(prev, next) => repo.saveNote(prev, next, isNotebookPublic)}
-                onDelete={(n) => void deleteNote(n)}
-              />
-            ) : (
-              <div className="center-screen">
-                <EmptyState
-                  title="노트를 선택하세요"
-                  description="왼쪽 목록에서 노트를 고르거나 새로 만들어 보세요."
-                  actions={<Button label="새 노트" variant="primary" onClick={() => void createNote()} />}
-                />
-              </div>
-            )}
-          </LayoutContent>
-        }
-      />
+      {isNarrow ? (
+        <Layout content={<LayoutContent isScrollable padding={0} label={selected ? "편집기" : "노트 목록"}>
+          {selected ? editorView : <div className="narrow-list">{listView}</div>}
+        </LayoutContent>} />
+      ) : (
+        <Layout
+          start={
+            <LayoutPanel width={340} hasDivider isScrollable padding={4} label="노트 목록">
+              {listView}
+            </LayoutPanel>
+          }
+          content={
+            <LayoutContent isScrollable padding={0} label="편집기">
+              {editorView}
+            </LayoutContent>
+          }
+        />
+      )}
     </AppShell>
   );
 }

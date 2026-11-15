@@ -16,6 +16,7 @@ import { excerpt, sanitizeNoteHtml } from "../lib/sanitize";
 import type { PublicNote, PublicNotebook } from "../lib/types";
 import { navigate } from "../router";
 import { Loading } from "./Loading";
+import { LogoMark } from "./Logo";
 
 function useLoad<T>(load: () => Promise<T | null>, deps: unknown[]) {
   const [state, setState] = useState<{ data: T | null; loading: boolean }>({ data: null, loading: true });
@@ -46,7 +47,7 @@ function PublicShell({ children, sideNav, subheading }: { children: ReactNode; s
       topNav={
         <TopNav
           label="상단 메뉴"
-          heading={<TopNavHeading heading="Pensieve" headingHref="/" subheading={subheading} />}
+          heading={<TopNavHeading logo={<LogoMark />} heading="Pensieve" headingHref="/" subheading={subheading} />}
           endContent={<Badge variant="neutral" label="읽기 전용" />}
         />
       }
