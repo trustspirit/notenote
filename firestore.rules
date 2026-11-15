@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+
+    // Private workspace: users/{uid}/notebooks, users/{uid}/notes
+    match /users/{uid}/{document=**} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Read-only public mirror of an individually shared note.
+    // get only (no list) so public notes can't be enumerated — you need the link.
+    match /publicNotes/{noteId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if signedIn() && resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.ownerUid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+    }
+
+    // Read-only public mirror of a shared notebook ("project") and its notes.
+    match /publicNotebooks/{notebookId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if signedIn() && resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.ownerUid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+
+      function notebookOwner() {
+        return get(/databases/$(database)/documents/publicNotebooks/$(notebookId)).data.ownerUid;
+      }
+
+      // Listing is allowed only inside one notebook (you need the notebook link).
+      match /notes/{noteId} {
+        allow read: if true;
+        allow write: if signedIn() && notebookOwner() == request.auth.uid;
+      }
+    }
+  }
+}

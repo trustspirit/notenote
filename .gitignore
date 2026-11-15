@@ -1,0 +1,14 @@
+node_modules/
+dist/
+lib/
+.env.local
+.env.*.local
+.secret.local
+.firebaserc
+*.log
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+.DS_Store
+.playwright-mcp/
