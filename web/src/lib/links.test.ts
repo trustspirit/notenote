@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { keepKnownLinks, linkHrefs, urlKey } from "./links";
+import { keepKnownLinks, linkHrefs, openableHref, urlKey } from "./links";
 
 describe("urlKey", () => {
   it("ignores trailing slash, fragment, host case and utm params", () => {
@@ -33,5 +33,22 @@ describe("keepKnownLinks", () => {
     const original = '<p><a href="https://my.blog/post">내 글</a></p>';
     const out = keepKnownLinks(original, [...sources, ...linkHrefs(original)]);
     expect(out.removed).toBe(0);
+  });
+});
+
+describe("openableHref", () => {
+  it("allows http, https and mailto links as written", () => {
+    expect(openableHref("https://example.org/a?b=1")).toBe("https://example.org/a?b=1");
+    expect(openableHref("http://example.org")).toBe("http://example.org");
+    expect(openableHref("mailto:a@b.co")).toBe("mailto:a@b.co");
+  });
+  it("adds https:// to a bare domain the author typed", () => {
+    expect(openableHref("example.org/talk")).toBe("https://example.org/talk");
+  });
+  it("refuses script and data schemes, and empty values", () => {
+    expect(openableHref("javascript:alert(1)")).toBeNull();
+    expect(openableHref("data:text/html,<b>x</b>")).toBeNull();
+    expect(openableHref("  ")).toBeNull();
+    expect(openableHref(undefined)).toBeNull();
   });
 });

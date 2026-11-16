@@ -25,6 +25,7 @@ import { sanitizeNoteHtml } from "../lib/sanitize";
 import type { Note, Notebook } from "../lib/types";
 import { MindMapCanvas } from "./MindMapCanvas";
 import { ShareToggle } from "./ShareToggle";
+import { LinkBar } from "./LinkBar";
 import { Toolbar } from "./Toolbar";
 
 interface Props {
@@ -288,6 +289,7 @@ export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack
       ) : (
         <Card padding={0}>
           <Toolbar editor={editor} />
+          <LinkBar editor={editor} />
           <EditorContent editor={editor} className="prose editor-body" />
         </Card>
       )}

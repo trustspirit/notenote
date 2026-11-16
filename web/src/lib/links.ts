@@ -41,3 +41,17 @@ export function keepKnownLinks(html: string, allowed: string[]): { html: string;
   }
   return { html: doc.body.innerHTML, removed };
 }
+
+/**
+ * The URL to open for a link's href, or null when it must not be opened.
+ * Only web and mail links open; script/data schemes never do. A bare "example.org/x"
+ * (what people type into the link prompt) gets https://.
+ */
+export function openableHref(href: string | undefined | null): string | null {
+  const value = href?.trim();
+  if (!value) return null;
+  if (/^mailto:/i.test(value)) return value;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return urlKey(value) ? value : null;
+  const withScheme = `https://${value}`;
+  return urlKey(withScheme) ? withScheme : null;
+}
