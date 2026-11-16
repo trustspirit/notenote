@@ -7,8 +7,9 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Network } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { formatDate } from "../lib/format";
+import { ACTION_WIDTH, lockAxis, settleOpen, swipeOffset } from "../lib/swipe";
 import { excerpt } from "../lib/sanitize";
 import type { Note } from "../lib/types";
 
@@ -21,11 +22,98 @@ interface Props {
   onSelect: (id: string) => void;
   onCreate: () => void;
   onCreateMindmap: () => void;
+  /** Delete a note (the caller confirms). Triggered by the touch swipe action. */
+  onDelete: (note: Note) => void;
   /** Notebook share/rename/delete controls when a notebook is selected. */
   headerExtra?: ReactNode;
 }
 
+/** Touch-only swipe-left row that reveals a delete button. Vertical scroll stays native (touch-action: pan-y). */
+function SwipeRow({ open, onOpenChange, onDelete, children }: {
+  open: boolean; onOpenChange: (open: boolean) => void; onDelete: () => void; children: ReactNode;
+}) {
+  const [dragOffset, setDragOffset] = useState<number | null>(null);
+  const start = useRef<{ x: number; y: number; startOpen: boolean } | null>(null);
+  const axis = useRef<ReturnType<typeof lockAxis>>("pending");
+  const suppressClick = useRef(false);
+  const offset = dragOffset ?? (open ? -ACTION_WIDTH : 0);
+
+  function onPointerDown(e: PointerEvent<HTMLDivElement>) {
+    if (e.pointerType !== "touch") return;
+    start.current = { x: e.clientX, y: e.clientY, startOpen: open };
+    axis.current = "pending";
+    suppressClick.current = false;
+  }
+  function onPointerMove(e: PointerEvent<HTMLDivElement>) {
+    const s = start.current;
+    if (!s || axis.current === "vertical") return;
+    const dx = e.clientX - s.x;
+    if (axis.current === "pending") {
+      axis.current = lockAxis(dx, e.clientY - s.y);
+      if (axis.current === "horizontal") e.currentTarget.setPointerCapture(e.pointerId);
+      else return;
+    }
+    setDragOffset(swipeOffset(s.startOpen, dx));
+  }
+  function finish(e: PointerEvent<HTMLDivElement>, cancelled: boolean) {
+    const s = start.current;
+    start.current = null;
+    if (!s || axis.current !== "horizontal") return;
+    suppressClick.current = true;
+    window.setTimeout(() => { suppressClick.current = false; }, 350);
+    onOpenChange(cancelled ? s.startOpen : settleOpen(swipeOffset(s.startOpen, e.clientX - s.x)));
+    setDragOffset(null);
+  }
+
+  return (
+    <div className="swipe-row" data-open={open}>
+      <button
+        type="button"
+        className="swipe-delete"
+        style={{ width: -offset, visibility: offset === 0 ? "hidden" : "visible" }}
+        tabIndex={open ? 0 : -1}
+        onClick={() => { onOpenChange(false); onDelete(); }}
+      >삭제</button>
+      <div
+        className="swipe-content"
+        data-dragging={dragOffset !== null}
+        style={{ transform: `translateX(${offset}px)` }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={(e) => finish(e, false)}
+        onPointerCancel={(e) => finish(e, true)}
+        onClickCapture={(e) => {
+          if (suppressClick.current || open) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (open && !suppressClick.current) onOpenChange(false);
+          }
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export function NoteList(p: Props) {
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  // Close the open row on outside touch or any scroll.
+  useEffect(() => {
+    if (!openId) return;
+    const close = () => setOpenId(null);
+    const onDown = (e: Event) => {
+      if (!(e.target as Element).closest?.('.swipe-row[data-open="true"]')) close();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [openId]);
+
   return (
     <VStack gap={3} className="note-list">
       <HStack gap={2} vAlign="center" justify="between">
@@ -53,6 +141,7 @@ export function NoteList(p: Props) {
         <ul className="note-items" role="list">
           {p.notes.map((n) => (
             <li key={n.id}>
+              <SwipeRow open={openId === n.id} onOpenChange={(o) => setOpenId(o ? n.id : null)} onDelete={() => p.onDelete(n)}>
               <button
                 type="button"
                 className="note-item"
@@ -68,6 +157,7 @@ export function NoteList(p: Props) {
                 <Text type="supporting" maxLines={2}>{excerpt(n.contentHtml) || "내용 없음"}</Text>
                 <Text type="supporting" size="2xs">{formatDate(n.updatedAt)}</Text>
               </button>
+              </SwipeRow>
             </li>
           ))}
         </ul>

@@ -155,6 +155,7 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
       onSelect={setSelectedId}
       onCreate={() => void createNote()}
       onCreateMindmap={() => void createNote("mindmap")}
+      onDelete={(n) => void deleteNote(n)}
       headerExtra={notebookControls}
     />
   );
