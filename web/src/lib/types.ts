@@ -63,6 +63,6 @@ export interface OrganizeResult {
   html: string;
   tags: string[];
   summary: string;
-  /** Pages the model saw while researching (empty for a plain organize). */
+  /** Pages the model saw while checking the note on the web. */
   sources: { url: string; title: string }[];
 }

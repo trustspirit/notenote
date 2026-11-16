@@ -1,10 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import type {
   BetaContentBlock, BetaMessageParam, BetaToolUnion,
 } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { SUBMIT_TOOL_NAME, buildResearchSystemPrompt, buildSystemPrompt } from "./prompt.js";
+import { SUBMIT_TOOL_NAME, buildSystemPrompt } from "./prompt.js";
 
 export const MODEL = "claude-opus-5-5";
 export const MAX_INPUT_CHARS = 100_000;
@@ -12,8 +11,6 @@ export const MAX_INPUT_CHARS = 100_000;
 export const OrganizeInputSchema = z.object({
   title: z.string().max(500).default(""),
   html: z.string().min(1, "note is empty").max(MAX_INPUT_CHARS, "note is too long"),
-  /** "자료 보완": let the model search the web to check facts and add sources. */
-  research: z.boolean().default(false),
 });
 export type OrganizeInput = z.infer<typeof OrganizeInputSchema>;
 
@@ -27,7 +24,7 @@ export type OrganizedNote = z.infer<typeof OrganizedNoteSchema>;
 
 /** A page the model actually saw in search results (the only URLs it may link to). */
 export interface Source { url: string; title: string }
-export type ResearchedNote = OrganizedNote & { sources: Source[] };
+export type OrganizeResult = OrganizedNote & { sources: Source[] };
 
 export class OrganizeError extends Error {
   constructor(
@@ -51,42 +48,8 @@ export function normalizeTags(tags: string[]): string[] {
 const noteMessage = (input: OrganizeInput) =>
   `<note_title>${input.title}</note_title>\n<note_html>\n${input.html}\n</note_html>`;
 
-export async function organizeNote(
-  client: Anthropic,
-  input: OrganizeInput,
-): Promise<OrganizedNote> {
-  const response = await client.beta.messages.parse({
-    model: MODEL,
-    max_tokens: 16000,
-    // Organizing notes is routine editing work: low effort keeps latency/cost down.
-    output_config: { effort: "low", format: betaZodOutputFormat(OrganizedNoteSchema) },
-    // If the primary model declines, the API retries on a fallback model in the same call.
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    system: [{ type: "text", text: buildSystemPrompt(), cache_control: { type: "ephemeral" } }],
-    messages: [
-      {
-        role: "user",
-        content: noteMessage(input),
-      },
-    ],
-  });
-
-  if (response.stop_reason === "refusal") {
-    throw new OrganizeError("The model declined to organize this note.", "refused");
-  }
-  if (response.stop_reason === "max_tokens") {
-    throw new OrganizeError("The organized note was too long to finish.", "truncated");
-  }
-  const parsed = response.parsed_output;
-  if (!parsed) {
-    throw new OrganizeError("The model returned an unexpected format.", "invalid_output");
-  }
-  return { ...parsed, title: parsed.title.trim() || input.title, tags: normalizeTags(parsed.tags) };
-}
-
 // ---------------------------------------------------------------------------
-// Research mode ("자료 보완")
+// One call organizes the note and checks it on the web ("정리하기" + "자료 보완")
 // ---------------------------------------------------------------------------
 
 /** Searches per call: caps cost ($10 per 1,000 searches plus the result tokens). */
@@ -156,7 +119,7 @@ async function createRound(client: Anthropic, round: number, params: CreateParam
   }
 }
 
-export async function researchNote(client: Anthropic, input: OrganizeInput): Promise<ResearchedNote> {
+export async function organizeNote(client: Anthropic, input: OrganizeInput): Promise<OrganizeResult> {
   const messages: BetaMessageParam[] = [{ role: "user", content: noteMessage(input) }];
   const seen = new Map<string, string>();
 
@@ -164,12 +127,12 @@ export async function researchNote(client: Anthropic, input: OrganizeInput): Pro
     const response = await createRound(client, round, {
       model: MODEL,
       max_tokens: 16000,
-      // Checking facts takes more care than reformatting: medium, not low.
+      // Checking facts and shaping nested rich text takes more care than reformatting: medium, not low.
       output_config: { effort: "medium" },
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       tools: RESEARCH_TOOLS,
-      system: [{ type: "text", text: buildResearchSystemPrompt(), cache_control: { type: "ephemeral" } }],
+      system: [{ type: "text", text: buildSystemPrompt(), cache_control: { type: "ephemeral" } }],
       messages,
     });
     collectSources(response.content, seen);

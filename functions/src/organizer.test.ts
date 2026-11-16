@@ -1,14 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  MAX_SEARCHES, OrganizeError, OrganizeInputSchema, collectSources, normalizeTags, organizeNote, researchNote,
+  MAX_SEARCHES, OrganizeError, OrganizeInputSchema, collectSources, normalizeTags, organizeNote,
 } from "./organizer.js";
-import { buildResearchSystemPrompt, buildSystemPrompt } from "./prompt.js";
-
-function fakeClient(response: object) {
-  const parse = vi.fn().mockResolvedValue(response);
-  return { client: { beta: { messages: { parse } } } as unknown as Anthropic, parse };
-}
+import { buildSystemPrompt } from "./prompt.js";
 
 describe("normalizeTags", () => {
   it("trims, strips #, lowercases, dedupes and caps at 5", () => {
@@ -25,37 +20,35 @@ describe("OrganizeInputSchema", () => {
   it("defaults title to empty string", () => {
     expect(OrganizeInputSchema.parse({ html: "<p>x</p>" }).title).toBe("");
   });
+  it("ignores the retired research flag: every organize call does both jobs", () => {
+    expect(OrganizeInputSchema.parse({ html: "<p>x</p>", research: false })).not.toHaveProperty("research");
+  });
+});
+
+describe("buildSystemPrompt", () => {
+  const prompt = buildSystemPrompt();
+  it("covers organizing and fact-checking in one prompt", () => {
+    expect(prompt).toContain("Use web search to check them");
+    expect(prompt).toContain("submit_organized_note");
+  });
+  it("tells the model how to express indentation with nested lists", () => {
+    expect(prompt).toContain("<li><p>");
+    expect(prompt).toMatch(/nested <ul>\/<ol>/);
+  });
+  it("tells the model to keep quotes verbatim in a blockquote with an attribution line", () => {
+    expect(prompt).toContain("<blockquote>");
+    expect(prompt).toMatch(/verbatim/i);
+    expect(prompt).toContain("— ");
+  });
+  it("limits emphasis to <strong>, <em> and a sparing <mark>", () => {
+    expect(prompt).toContain("<strong>");
+    expect(prompt).toContain("<mark>");
+    expect(prompt).toMatch(/sparingly/i);
+  });
 });
 
 describe("organizeNote", () => {
-  const input = { title: "회의", html: "<p>rough notes</p>" };
-
-  it("returns parsed output with normalized tags and stable system prompt", async () => {
-    const { client, parse } = fakeClient({
-      stop_reason: "end_turn",
-      parsed_output: { title: "  ", html: "<h2>정리</h2>", tags: ["#Meeting"], summary: "s" },
-    });
-    const result = await organizeNote(client, input);
-    expect(result).toEqual({ title: "회의", html: "<h2>정리</h2>", tags: ["meeting"], summary: "s" });
-    expect(parse.mock.calls[0][0].system[0].text).toBe(buildSystemPrompt());
-  });
-
-  it.each([
-    ["refusal", "refused"],
-    ["max_tokens", "truncated"],
-  ])("maps stop_reason %s to %s", async (stop_reason, code) => {
-    const { client } = fakeClient({ stop_reason, parsed_output: null });
-    await expect(organizeNote(client, input)).rejects.toMatchObject({ code });
-  });
-
-  it("throws invalid_output when parsing failed", async () => {
-    const { client } = fakeClient({ stop_reason: "end_turn", parsed_output: null });
-    await expect(organizeNote(client, input)).rejects.toBeInstanceOf(OrganizeError);
-  });
-});
-
-describe("researchNote", () => {
-  const input = { title: "연차대회", html: "<p>10월 연차대회 옥스 회장님 말씀 학습 권고</p>", research: true };
+  const input = { title: "연차대회", html: "<p>10월 연차대회 옥스 회장님 말씀 학습 권고</p>" };
   const note = { title: "연차 대회 말씀", html: "<p>정리됨</p>", tags: ["#Conference"], summary: "s" };
   const search = (results: { url: string; title: string }[] | object) => ({
     type: "web_search_tool_result", tool_use_id: "srv_1",
@@ -83,7 +76,7 @@ describe("researchNote", () => {
         submit(),
       ],
     });
-    const result = await researchNote(client, input);
+    const result = await organizeNote(client, input);
     expect(result).toMatchObject({ title: "연차 대회 말씀", tags: ["conference"] });
     expect(result.sources).toEqual([
       { url: "https://example.org/talk", title: "The Talk" },
@@ -92,7 +85,7 @@ describe("researchNote", () => {
     const req = create.mock.calls[0][0];
     expect(req.tools[0]).toMatchObject({ type: "web_search_20260209", name: "web_search", max_uses: MAX_SEARCHES });
     expect(req.output_config.format).toBeUndefined(); // citations + format would be a 400
-    expect(req.system[0].text).toBe(buildResearchSystemPrompt());
+    expect(req.system[0].text).toBe(buildSystemPrompt());
   });
 
   it("resumes a paused turn by sending it back unchanged", async () => {
@@ -101,7 +94,7 @@ describe("researchNote", () => {
       { stop_reason: "pause_turn", content: paused },
       { stop_reason: "tool_use", content: [submit()] },
     );
-    await researchNote(client, input);
+    await organizeNote(client, input);
     const second = create.mock.calls[1][0].messages;
     expect(second.at(-1)).toEqual({ role: "assistant", content: paused }); // no "continue" user message
   });
@@ -111,37 +104,37 @@ describe("researchNote", () => {
       { stop_reason: "end_turn", content: [{ type: "text", text: "done" }] },
       { stop_reason: "tool_use", content: [submit()] },
     );
-    await researchNote(client, input);
+    await organizeNote(client, input);
     expect(create.mock.calls[1][0].messages.at(-1)).toMatchObject({ role: "user" });
   });
 
   it("gives up with invalid_output if it never submits", async () => {
     const turn = { stop_reason: "end_turn", content: [{ type: "text", text: "…" }] };
     const { client, create } = scripted(turn, turn, turn, turn, turn);
-    await expect(researchNote(client, input)).rejects.toMatchObject({ code: "invalid_output" });
+    await expect(organizeNote(client, input)).rejects.toMatchObject({ code: "invalid_output" });
     expect(create).toHaveBeenCalledTimes(4);
   });
 
   it("doesn't let a later-round API error look refundable (searches were already billed)", async () => {
     const { client, create } = scripted({ stop_reason: "pause_turn", content: [] });
     create.mockRejectedValueOnce(new Anthropic.APIError(500, undefined, "boom", new Headers()));
-    await expect(researchNote(client, input)).rejects.toMatchObject({ code: "interrupted" });
+    await expect(organizeNote(client, input)).rejects.toMatchObject({ code: "interrupted" });
   });
 
   it("passes a first-round API error through (nothing billed, quota is refunded)", async () => {
     const create = vi.fn().mockRejectedValue(new Anthropic.APIError(503, undefined, "down", new Headers()));
     const client = { beta: { messages: { create } } } as unknown as Anthropic;
-    await expect(researchNote(client, input)).rejects.toBeInstanceOf(Anthropic.APIError);
+    await expect(organizeNote(client, input)).rejects.toBeInstanceOf(Anthropic.APIError);
   });
 
   it("rejects a submission that doesn't match the schema", async () => {
     const { client } = scripted({ stop_reason: "tool_use", content: [submit({ title: "x" })] });
-    await expect(researchNote(client, input)).rejects.toMatchObject({ code: "invalid_output" });
+    await expect(organizeNote(client, input)).rejects.toMatchObject({ code: "invalid_output" });
   });
 
   it("maps refusal and ignores search errors when collecting sources", async () => {
     const { client } = scripted({ stop_reason: "refusal", content: [] });
-    await expect(researchNote(client, input)).rejects.toMatchObject({ code: "refused" });
+    await expect(organizeNote(client, input)).rejects.toMatchObject({ code: "refused" });
 
     const seen = new Map<string, string>();
     collectSources([search({ type: "web_search_tool_result_error", error_code: "unavailable" })] as never, seen);

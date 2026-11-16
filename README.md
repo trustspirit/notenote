@@ -102,19 +102,20 @@ the top bar shows **Drive 다시 연결**, one click to resume.
 
 ## Customizing the AI organizer
 
-Edit `ORGANIZE_RULES` in `functions/src/prompt.ts`. That list is the organizer's whole editing style.
+**정리하기** is one action: Claude tidies the note into rich text and also searches the web
+(`web_search_20260209`, at most `MAX_SEARCHES` = 5 per call) to check facts, pin down vague references
+("10월 연차대회 … 말씀"), correct clear errors, and add source links plus a 참고 자료 section.
+It skips searching when the note has nothing checkable.
 
-### 자료 보완 (research mode)
+Edit the rule lists in `functions/src/prompt.ts`; together they are the organizer's whole style:
+`ORGANIZE_RULES` (structure and wording), `RICH_TEXT_RULES` (bullets, nested lists for indentation,
+verbatim `<blockquote>` quotes with a "— speaker, source, date" line, sparing `<strong>`/`<mark>`),
+and `RESEARCH_RULES` (checking and citing).
 
-The **자료 보완** button organizes the note like **정리하기**, and also lets Claude search the web
-(`web_search_20260209`, at most `MAX_SEARCHES` = 5 per call). It checks facts, pins down vague
-references ("10월 연차대회 … 말씀"), corrects clear errors, and adds source links plus a 참고 자료 section.
-Its rules are `RESEARCH_RULES` in `functions/src/prompt.ts`.
-
-- Cost: web search is billed per search ($10 / 1,000) plus the result tokens, so a research call
-  counts as 2 units of `AI_DAILY_LIMIT`. Web search must be enabled for your Anthropic organization.
+- Cost: web search is billed per search ($10 / 1,000) plus the result tokens, so every organize
+  counts as 2 units of `AI_DAILY_LIMIT` (30 units = 15 organizes a day). Web search must be enabled for your Anthropic organization.
 - Links: the server returns the URLs that actually came back from search (`sources`). The client keeps
   a link only if it is one of those or was already in the note (`web/src/lib/links.ts`); any other link
   is unwrapped to plain text, so a guessed URL can't slip in.
 - Output: web search always returns citations, which can't be combined with JSON structured outputs.
-  So in this mode the model submits its result through a `submit_organized_note` tool, validated with Zod.
+  So the model submits its result through a `submit_organized_note` tool, validated with Zod.
