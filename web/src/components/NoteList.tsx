@@ -10,6 +10,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { ChevronDown, ChevronRight, FolderClosed, MoreHorizontal, Network } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { NoteTree } from "./NoteTree";
 import { formatDate } from "../lib/format";
 import { moveTargets, type MoveTarget, type NotebookTree } from "../lib/folders";
 import { ACTION_WIDTH, lockAxis, settleOpen, swipeOffset } from "../lib/swipe";
@@ -36,6 +37,9 @@ interface Props {
   onMove: (note: Note, to: MoveTarget) => void;
   onRenameFolder: (folder: Folder) => void;
   onDeleteFolder: (folder: Folder) => void;
+  /** Drag and drop results (mouse). `orderedIds` is the container's final sequence. */
+  onPlaceNote: (noteId: string, container: string, orderedIds: string[]) => Promise<void>;
+  onPlaceFolder: (folderId: string, orderedIds: string[]) => Promise<void>;
 }
 
 /** Touch-only swipe-left row that reveals a delete button. Vertical scroll stays native (touch-action: pan-y). */
@@ -130,8 +134,7 @@ export function NoteList(p: Props) {
     };
   }, [openId]);
 
-  const noteRow = (n: Note) => (
-    <li key={n.id}>
+  const noteBody = (n: Note) => (
       <SwipeRow open={openId === n.id} onOpenChange={(o) => setOpenId(o ? n.id : null)} onDelete={() => p.onDelete(n)}>
         <div className="note-row">
           <button
@@ -165,7 +168,28 @@ export function NoteList(p: Props) {
           </div>
         </div>
       </SwipeRow>
-    </li>
+  );
+  const noteRow = (n: Note) => <li key={n.id}>{noteBody(n)}</li>;
+
+  const folderHead = (folder: Folder, inside: Note[], isOpen: boolean) => (
+    <HStack gap={1} vAlign="center" className="folder-head">
+      <button type="button" className="folder-toggle" aria-expanded={isOpen} onClick={() => toggleFolder(folder.id)}>
+        {isOpen ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
+        <FolderClosed size={16} aria-hidden />
+        <Text weight="semibold" maxLines={1}>{folder.name}</Text>
+        <Text type="supporting" size="2xs">{inside.length}</Text>
+      </button>
+      <DropdownMenu
+        presentation="adaptive"
+        renderTrigger={(tp) => (
+          <IconButton {...tp} label={`${folder.name} 폴더 메뉴`} size="sm" variant="ghost" icon={<MoreHorizontal size={16} aria-hidden />} />
+        )}
+        items={[
+          { label: "이름 변경", onClick: () => p.onRenameFolder(folder) },
+          { label: "폴더 삭제", onClick: () => p.onDeleteFolder(folder) },
+        ]}
+      />
+    </HStack>
   );
 
   return (
@@ -192,42 +216,16 @@ export function NoteList(p: Props) {
       {p.notes.length === 0 && !(p.tree && p.tree.folders.length > 0) ? (
         <EmptyState isCompact title="노트가 없어요" description="새 노트를 만들어 생각을 적어보세요." />
       ) : p.tree ? (
-        <ul className="note-items" role="list">
-          {p.tree.folders.map(({ folder, notes }) => {
-            const isOpen = !collapsed.has(folder.id);
-            return (
-              <li key={folder.id} className="folder-item">
-                <HStack gap={1} vAlign="center" className="folder-head">
-                  <button
-                    type="button"
-                    className="folder-toggle"
-                    aria-expanded={isOpen}
-                    onClick={() => toggleFolder(folder.id)}
-                  >
-                    {isOpen ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
-                    <FolderClosed size={16} aria-hidden />
-                    <Text weight="semibold" maxLines={1}>{folder.name}</Text>
-                    <Text type="supporting" size="2xs">{notes.length}</Text>
-                  </button>
-                  <DropdownMenu
-                    presentation="adaptive"
-                    renderTrigger={(tp) => (
-                      <IconButton {...tp} label={`${folder.name} 폴더 메뉴`} size="sm" variant="ghost" icon={<MoreHorizontal size={16} aria-hidden />} />
-                    )}
-                    items={[
-                      { label: "이름 변경", onClick: () => p.onRenameFolder(folder) },
-                      { label: "폴더 삭제", onClick: () => p.onDeleteFolder(folder) },
-                    ]}
-                  />
-                </HStack>
-                {isOpen && (notes.length === 0
-                  ? <Text type="supporting" size="2xs" className="folder-empty">비어 있어요. 노트의 ⋯ 메뉴에서 이동할 수 있어요.</Text>
-                  : <ul className="note-items folder-notes" role="list">{notes.map(noteRow)}</ul>)}
-              </li>
-            );
-          })}
-          {p.tree.loose.map(noteRow)}
-        </ul>
+        <div className="note-tree">
+          <NoteTree
+            tree={p.tree}
+            collapsed={collapsed}
+            renderFolderHead={folderHead}
+            renderNote={noteBody}
+            onPlaceNote={p.onPlaceNote}
+            onPlaceFolder={p.onPlaceFolder}
+          />
+        </div>
       ) : (
         <ul className="note-items" role="list">
           {p.notes.map(noteRow)}

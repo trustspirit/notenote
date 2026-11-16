@@ -113,8 +113,21 @@ export class NotesRepository {
    * Change where a note lives without touching its content or updatedAt (so a move doesn't
    * reorder the "newest" list or race the editor's autosave).
    */
-  async moveNote(note: Note, to: { notebookId: string; folderId: string | null }) {
-    await updateDoc(doc(notesCol(this.uid), note.id), { notebookId: to.notebookId, folderId: to.folderId });
+  async moveNote(note: Note, to: { notebookId: string; folderId: string | null; order?: number }) {
+    await updateDoc(doc(notesCol(this.uid), note.id), {
+      notebookId: to.notebookId, folderId: to.folderId, ...(to.order !== undefined && { order: to.order }),
+    });
+  }
+
+  /** Apply the result of a drag and drop (new orders, maybe a new folder) in as few batches as possible. */
+  async applyPlacement(ops: { kind: "note" | "folder"; id: string; patch: Record<string, unknown> }[]) {
+    for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
+      const batch = writeBatch(db);
+      for (const op of ops.slice(i, i + BATCH_LIMIT)) {
+        batch.update(doc(op.kind === "note" ? notesCol(this.uid) : foldersCol(this.uid), op.id), op.patch);
+      }
+      await batch.commit();
+    }
   }
 
   async deleteNote(note: Note) {

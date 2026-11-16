@@ -14,6 +14,7 @@ import { useNoteSearch } from "../hooks/useNoteSearch";
 import { useWorkspace } from "../hooks/useWorkspace";
 import { shareUrls } from "../lib/publicRepository";
 import { groupNotebookNotes, type MoveTarget } from "../lib/folders";
+import { ROOT, orderUpdates, topOrder } from "../lib/placement";
 import { createMindmap, mindmapToHtml } from "../lib/mindmap";
 import type { Folder, Note, Notebook, NoteKind } from "../lib/types";
 import { useDialogs } from "./Dialogs";
@@ -63,6 +64,8 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
       tags: filter.kind === "tag" ? [filter.tag] : [], isPublic: false, createdAt: now, updatedAt: now,
       kind,
     };
+    const top = topOrder(notes.filter((n) => n.notebookId === notebookId && !n.folderId).map((n) => n.order));
+    if (top !== undefined) note.order = top;
     if (kind === "mindmap") {
       note.mindmap = createMindmap("중심 주제", () => crypto.randomUUID().slice(0, 8));
       note.contentHtml = mindmapToHtml(note.mindmap);
@@ -72,7 +75,26 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
   }
 
   async function moveNote(note: Note, to: MoveTarget) {
-    await repo.moveNote(note, { notebookId: to.notebookId, folderId: to.folderId });
+    // Land at the top of the destination, like a new note.
+    const siblings = notes.filter((n) => n.notebookId === to.notebookId && (to.folderId ? n.folderId === to.folderId : !n.folderId));
+    await repo.moveNote(note, { notebookId: to.notebookId, folderId: to.folderId, order: topOrder(siblings.map((n) => n.order)) });
+  }
+
+  /** Drag and drop: the note ended up in `container` (a folder id, or ROOT) with `orderedIds` as its sequence. */
+  async function placeNote(noteId: string, container: string, orderedIds: string[]) {
+    const folderId = container === ROOT ? null : container;
+    const orders = Object.fromEntries(orderedIds.map((id) => [id, notes.find((n) => n.id === id)?.order]));
+    const ops = orderUpdates(orderedIds, orders, noteId).map((u) => ({
+      kind: "note" as const, id: u.id, patch: u.id === noteId ? { order: u.order, folderId } : { order: u.order },
+    }));
+    await repo.applyPlacement(ops);
+  }
+
+  async function placeFolder(folderId: string, orderedIds: string[]) {
+    const orders = Object.fromEntries(orderedIds.map((id) => [id, folders.find((f) => f.id === id)?.order]));
+    await repo.applyPlacement(orderUpdates(orderedIds, orders, folderId).map((u) => ({
+      kind: "folder" as const, id: u.id, patch: { order: u.order },
+    })));
   }
 
   /** Save from the editor, keeping the note where moveNote last put it. */
@@ -205,6 +227,8 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
       folders={folders}
       tree={tree}
       onMove={(n, to) => void moveNote(n, to)}
+      onPlaceNote={placeNote}
+      onPlaceFolder={placeFolder}
       onRenameFolder={(f) => void renameFolder(f)}
       onDeleteFolder={(f) => void deleteFolder(f)}
       headerExtra={notebookControls ?? (filter.kind === "tag" && (
