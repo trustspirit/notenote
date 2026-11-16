@@ -5,6 +5,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { defineInt, defineSecret, defineString } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { OrganizeError, OrganizeInputSchema, organizeNote } from "./organizer.js";
+import { withHeartbeat } from "./heartbeat.js";
 import { consumeDailyQuota, refundDailyQuota, isAllowed } from "./quota.js";
 
 initializeApp();
@@ -25,7 +26,7 @@ export const organize = onCall(
     memory: "512MiB",
     maxInstances: 5,
   },
-  async (request) => {
+  async (request, response) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
     }
@@ -50,7 +51,8 @@ export const organize = onCall(
 
     const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
     try {
-      return await organizeNote(client, parsed.data);
+      // Streams a heartbeat while the model works so a long call isn't dropped by mobile networks.
+      return await withHeartbeat((chunk) => response?.sendChunk(chunk) ?? Promise.resolve(false), () => organizeNote(client, parsed.data));
     } catch (err) {
       // No answer was produced, so the call shouldn't count against today's limit.
       if (err instanceof Anthropic.APIError) {
