@@ -5,7 +5,7 @@ import { Card } from "@astryxdesign/core/Card";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { Selector } from "@astryxdesign/core/Selector";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
 import Highlight from "@tiptap/extension-highlight";
@@ -22,7 +22,8 @@ import { keepKnownLinks, linkHrefs } from "../lib/links";
 import { organizeWithAI } from "../lib/organizeApi";
 import { shareUrls } from "../lib/publicRepository";
 import { sanitizeNoteHtml } from "../lib/sanitize";
-import type { Note, Notebook } from "../lib/types";
+import { moveTargets, type MoveTarget } from "../lib/folders";
+import type { Folder, Note, Notebook } from "../lib/types";
 import { MindMapCanvas } from "./MindMapCanvas";
 import { ShareToggle } from "./ShareToggle";
 import { LinkBar } from "./LinkBar";
@@ -33,6 +34,9 @@ interface Props {
   /** For the note's public link (share ids are owner-prefixed). */
   ownerUid: string;
   notebooks: Notebook[];
+  folders: Folder[];
+  /** Move this note to another notebook or folder. */
+  onMove: (note: Note, to: MoveTarget) => void;
   onSave: (next: Note) => Promise<void>;
   onDelete: (note: Note) => void;
   /** Narrow screens: go back to the note list. */
@@ -71,10 +75,9 @@ export const editorExtensions = [
 ];
 
 /** Mount with `key={note.id}` so switching notes resets all local state. */
-export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack, controlRef }: Props) {
+export function NoteEditor({ note, ownerUid, notebooks, folders, onMove, onSave, onDelete, onBack, controlRef }: Props) {
   const [title, setTitle] = useState(note.title);
   const [tags, setTags] = useState<string[]>(note.tags);
-  const [notebookId, setNotebookId] = useState(note.notebookId);
   const [isPublic, setIsPublic] = useState(note.isPublic);
   const [aiState, setAiState] = useState<AiState>({ busy: false });
 
@@ -94,8 +97,8 @@ export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack
   });
 
   // Read values through refs at save time so a debounced save sees the latest edits.
-  const fields = useRef({ title, tags, notebookId, isPublic });
-  fields.current = { title, tags, notebookId, isPublic };
+  const fields = useRef({ title, tags, isPublic });
+  fields.current = { title, tags, isPublic };
 
   const autosave = useAutosave(async () => {
     if (!editor) return;
@@ -182,6 +185,8 @@ export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack
     change(setTags)([...tags, tag]);
   }
 
+  const targets = moveTargets(notebooks, folders, note);
+
   if (!editor) return null;
 
   return (
@@ -196,14 +201,11 @@ export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack
             onClick={() => { void autosave.flush(); onBack(); }}
           />
         )}
-        <Selector
-          label="노트북"
-          isLabelHidden
-          size="sm"
-          width={180}
-          value={notebookId}
-          options={notebooks.map((nb) => ({ value: nb.id, label: nb.name }))}
-          onChange={(v) => change(setNotebookId)(v)}
+        <DropdownMenu
+          presentation="adaptive"
+          button={{ label: `이동: ${targets.find((t) => t.isCurrent)?.label ?? "노트북"}`, size: "sm", variant: "secondary" }}
+          hasChevron
+          items={targets.map((t) => ({ label: t.label, isDisabled: t.isCurrent, onClick: () => onMove(note, t) }))}
         />
         <Badge variant={STATUS_BADGE[autosave.status]} label={STATUS_TEXT[autosave.status]} />
         <div className="spacer" />

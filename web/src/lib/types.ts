@@ -9,9 +9,23 @@ export interface Notebook {
   createdAt: number;
 }
 
+/** A one-level folder inside a notebook. Notes outside any folder sit at the notebook's top level. */
+export interface Folder {
+  id: string;
+  notebookId: string;
+  name: string;
+  /** Manual position among the notebook's folders (smaller first). Missing on older docs. */
+  order?: number;
+  createdAt: number;
+}
+
 export interface Note {
   id: string;
   notebookId: string;
+  /** The folder it sits in; missing or null = the notebook's top level. */
+  folderId?: string | null;
+  /** Manual position among its siblings (smaller first). Missing = ordered by updatedAt. */
+  order?: number;
   title: string;
   contentHtml: string;
   tags: string[];

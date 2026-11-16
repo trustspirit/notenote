@@ -1,17 +1,20 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
-import { Network } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderClosed, MoreHorizontal, Network } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { formatDate } from "../lib/format";
+import { moveTargets, type MoveTarget, type NotebookTree } from "../lib/folders";
 import { ACTION_WIDTH, lockAxis, settleOpen, swipeOffset } from "../lib/swipe";
 import { excerpt } from "../lib/sanitize";
-import type { Note } from "../lib/types";
+import type { Folder, Note, Notebook } from "../lib/types";
 
 interface Props {
   heading: string;
@@ -26,6 +29,13 @@ interface Props {
   onDelete: (note: Note) => void;
   /** Notebook share/rename/delete controls when a notebook is selected. */
   headerExtra?: ReactNode;
+  notebooks: Notebook[];
+  folders: Folder[];
+  /** Set while a whole notebook is shown without search: renders its folders instead of a flat list. */
+  tree: NotebookTree | null;
+  onMove: (note: Note, to: MoveTarget) => void;
+  onRenameFolder: (folder: Folder) => void;
+  onDeleteFolder: (folder: Folder) => void;
 }
 
 /** Touch-only swipe-left row that reveals a delete button. Vertical scroll stays native (touch-action: pan-y). */
@@ -98,6 +108,12 @@ function SwipeRow({ open, onOpenChange, onDelete, children }: {
 
 export function NoteList(p: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleFolder = (id: string) => setCollapsed((prev) => {
+    const next = new Set(prev);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  });
 
   // Close the open row on outside touch or any scroll.
   useEffect(() => {
@@ -113,6 +129,44 @@ export function NoteList(p: Props) {
       window.removeEventListener("scroll", close, true);
     };
   }, [openId]);
+
+  const noteRow = (n: Note) => (
+    <li key={n.id}>
+      <SwipeRow open={openId === n.id} onOpenChange={(o) => setOpenId(o ? n.id : null)} onDelete={() => p.onDelete(n)}>
+        <div className="note-row">
+          <button
+            type="button"
+            className="note-item"
+            aria-current={p.selectedId === n.id}
+            onClick={() => p.onSelect(n.id)}
+          >
+            <HStack gap={1} vAlign="center">
+              <Text weight="semibold" maxLines={1}>{n.title || "제목 없음"}</Text>
+              {n.isPublic && <Badge variant="blue" label="공개" />}
+              {n.kind === "mindmap" && <Badge variant="neutral" label="마인드맵" />}
+              {n.aiOrganizedAt && <Badge variant="neutral" label="정리됨" />}
+            </HStack>
+            <Text type="supporting" maxLines={2}>{excerpt(n.contentHtml) || "내용 없음"}</Text>
+            <Text type="supporting" size="2xs">{formatDate(n.updatedAt)}</Text>
+          </button>
+          <div className="note-row-menu">
+            <DropdownMenu
+              presentation="adaptive"
+              renderTrigger={(tp) => (
+                <IconButton {...tp} label="노트 메뉴" size="sm" variant="ghost" icon={<MoreHorizontal size={16} aria-hidden />} />
+              )}
+              items={[{
+                label: "이동",
+                items: moveTargets(p.notebooks, p.folders, n).map((t) => ({
+                  label: t.label, isDisabled: t.isCurrent, onClick: () => p.onMove(n, t),
+                })),
+              }]}
+            />
+          </div>
+        </div>
+      </SwipeRow>
+    </li>
+  );
 
   return (
     <VStack gap={3} className="note-list">
@@ -135,31 +189,48 @@ export function NoteList(p: Props) {
       />
       <Text type="supporting">{p.notes.length}개의 노트</Text>
 
-      {p.notes.length === 0 ? (
+      {p.notes.length === 0 && !(p.tree && p.tree.folders.length > 0) ? (
         <EmptyState isCompact title="노트가 없어요" description="새 노트를 만들어 생각을 적어보세요." />
+      ) : p.tree ? (
+        <ul className="note-items" role="list">
+          {p.tree.folders.map(({ folder, notes }) => {
+            const isOpen = !collapsed.has(folder.id);
+            return (
+              <li key={folder.id} className="folder-item">
+                <HStack gap={1} vAlign="center" className="folder-head">
+                  <button
+                    type="button"
+                    className="folder-toggle"
+                    aria-expanded={isOpen}
+                    onClick={() => toggleFolder(folder.id)}
+                  >
+                    {isOpen ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
+                    <FolderClosed size={16} aria-hidden />
+                    <Text weight="semibold" maxLines={1}>{folder.name}</Text>
+                    <Text type="supporting" size="2xs">{notes.length}</Text>
+                  </button>
+                  <DropdownMenu
+                    presentation="adaptive"
+                    renderTrigger={(tp) => (
+                      <IconButton {...tp} label={`${folder.name} 폴더 메뉴`} size="sm" variant="ghost" icon={<MoreHorizontal size={16} aria-hidden />} />
+                    )}
+                    items={[
+                      { label: "이름 변경", onClick: () => p.onRenameFolder(folder) },
+                      { label: "폴더 삭제", onClick: () => p.onDeleteFolder(folder) },
+                    ]}
+                  />
+                </HStack>
+                {isOpen && (notes.length === 0
+                  ? <Text type="supporting" size="2xs" className="folder-empty">비어 있어요. 노트의 ⋯ 메뉴에서 이동할 수 있어요.</Text>
+                  : <ul className="note-items folder-notes" role="list">{notes.map(noteRow)}</ul>)}
+              </li>
+            );
+          })}
+          {p.tree.loose.map(noteRow)}
+        </ul>
       ) : (
         <ul className="note-items" role="list">
-          {p.notes.map((n) => (
-            <li key={n.id}>
-              <SwipeRow open={openId === n.id} onOpenChange={(o) => setOpenId(o ? n.id : null)} onDelete={() => p.onDelete(n)}>
-              <button
-                type="button"
-                className="note-item"
-                aria-current={p.selectedId === n.id}
-                onClick={() => p.onSelect(n.id)}
-              >
-                <HStack gap={1} vAlign="center">
-                  <Text weight="semibold" maxLines={1}>{n.title || "제목 없음"}</Text>
-                  {n.isPublic && <Badge variant="blue" label="공개" />}
-                  {n.kind === "mindmap" && <Badge variant="neutral" label="마인드맵" />}
-                  {n.aiOrganizedAt && <Badge variant="neutral" label="정리됨" />}
-                </HStack>
-                <Text type="supporting" maxLines={2}>{excerpt(n.contentHtml) || "내용 없음"}</Text>
-                <Text type="supporting" size="2xs">{formatDate(n.updatedAt)}</Text>
-              </button>
-              </SwipeRow>
-            </li>
-          ))}
+          {p.notes.map(noteRow)}
         </ul>
       )}
     </VStack>

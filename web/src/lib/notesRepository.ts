@@ -4,7 +4,7 @@ import {
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
-import type { Note, Notebook } from "./types";
+import type { Folder, Note, Notebook } from "./types";
 
 const BATCH_LIMIT = 450;
 /** Fixed id so two tabs opened on first login create one default notebook, not two. */
@@ -12,6 +12,7 @@ const DEFAULT_NOTEBOOK_ID = "default";
 
 const notebooksCol = (uid: string) => collection(db, "users", uid, "notebooks");
 const notesCol = (uid: string) => collection(db, "users", uid, "notes");
+const foldersCol = (uid: string) => collection(db, "users", uid, "folders");
 
 /**
  * Private workspace of one signed-in user. Only private docs are written here:
@@ -36,6 +37,12 @@ export class NotesRepository {
     );
   }
 
+  watchFolders(cb: (folders: Folder[]) => void): Unsubscribe {
+    return onSnapshot(query(foldersCol(this.uid), orderBy("createdAt")), (snap) =>
+      cb(snap.docs.map((d) => ({ ...d.data(), id: d.id }) as unknown as Folder)),
+    );
+  }
+
   // ---------- notebooks ----------
   async createNotebook(name: string): Promise<string> {
     const ref = doc(notebooksCol(this.uid));
@@ -55,13 +62,38 @@ export class NotesRepository {
     await updateDoc(doc(notebooksCol(this.uid), notebook.id), { name });
   }
 
-  async deleteNotebook(notebook: Notebook, notesInside: Note[]) {
-    for (let i = 0; i < notesInside.length; i += BATCH_LIMIT) {
+  async deleteNotebook(notebook: Notebook, notesInside: Note[], foldersInside: Folder[] = []) {
+    const refs = [
+      ...notesInside.map((n) => doc(notesCol(this.uid), n.id)),
+      ...foldersInside.map((f) => doc(foldersCol(this.uid), f.id)),
+    ];
+    for (let i = 0; i < refs.length; i += BATCH_LIMIT) {
       const batch = writeBatch(db);
-      for (const n of notesInside.slice(i, i + BATCH_LIMIT)) batch.delete(doc(notesCol(this.uid), n.id));
+      for (const ref of refs.slice(i, i + BATCH_LIMIT)) batch.delete(ref);
       await batch.commit();
     }
     await deleteDoc(doc(notebooksCol(this.uid), notebook.id));
+  }
+
+  // ---------- folders ----------
+  async createFolder(notebookId: string, name: string): Promise<string> {
+    const ref = doc(foldersCol(this.uid));
+    await setDoc(ref, { notebookId, name, createdAt: Date.now() });
+    return ref.id;
+  }
+
+  async renameFolder(folder: Folder, name: string) {
+    await updateDoc(doc(foldersCol(this.uid), folder.id), { name });
+  }
+
+  /** Deleting a folder never deletes notes: they move out to the notebook's top level. */
+  async deleteFolder(folder: Folder, notesInside: Note[]) {
+    for (let i = 0; i < Math.max(notesInside.length, 1); i += BATCH_LIMIT) {
+      const batch = writeBatch(db);
+      for (const n of notesInside.slice(i, i + BATCH_LIMIT)) batch.update(doc(notesCol(this.uid), n.id), { folderId: null });
+      if (i + BATCH_LIMIT >= notesInside.length) batch.delete(doc(foldersCol(this.uid), folder.id));
+      await batch.commit();
+    }
   }
 
   /** Share / unshare a whole notebook ("project") as a read-only public list. */
@@ -75,6 +107,14 @@ export class NotesRepository {
   async saveNote(next: Note) {
     const { id, ...data } = next;
     await setDoc(doc(notesCol(this.uid), id), data);
+  }
+
+  /**
+   * Change where a note lives without touching its content or updatedAt (so a move doesn't
+   * reorder the "newest" list or race the editor's autosave).
+   */
+  async moveNote(note: Note, to: { notebookId: string; folderId: string | null }) {
+    await updateDoc(doc(notesCol(this.uid), note.id), { notebookId: to.notebookId, folderId: to.folderId });
   }
 
   async deleteNote(note: Note) {

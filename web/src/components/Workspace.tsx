@@ -13,8 +13,9 @@ import { useDriveBackup } from "../hooks/useDriveBackup";
 import { useNoteSearch } from "../hooks/useNoteSearch";
 import { useWorkspace } from "../hooks/useWorkspace";
 import { shareUrls } from "../lib/publicRepository";
+import { groupNotebookNotes, type MoveTarget } from "../lib/folders";
 import { createMindmap, mindmapToHtml } from "../lib/mindmap";
-import type { Note, Notebook, NoteKind } from "../lib/types";
+import type { Folder, Note, Notebook, NoteKind } from "../lib/types";
 import { useDialogs } from "./Dialogs";
 import { DriveBackupButton } from "./DriveBackup";
 import { Loading } from "./Loading";
@@ -25,7 +26,7 @@ import { ShareToggle } from "./ShareToggle";
 import { Sidebar, type Filter } from "./Sidebar";
 
 export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => void }) {
-  const { repo, notebooks, notes, loading } = useWorkspace(user);
+  const { repo, notebooks, notes, folders, loading } = useWorkspace(user);
   const backup = useDriveBackup(user, notes, notebooks, !loading);
   const dialogs = useDialogs();
   const editorControl = useRef<EditorControl | null>(null);
@@ -43,7 +44,14 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
   }), [notes, filter, matches]);
 
   const selected = notes.find((n) => n.id === selectedId) ?? null;
+  // The editor must never write back a stale notebook/folder: placement is owned by moveNote.
+  const latestNotes = useRef(notes);
+  latestNotes.current = notes;
   const selectedNb = filter.kind === "notebook" ? notebooks.find((nb) => nb.id === filter.id) : undefined;
+  const tree = useMemo(
+    () => (selectedNb && !search.trim() ? groupNotebookNotes(notes, folders, selectedNb.id) : null),
+    [selectedNb, search, notes, folders],
+  );
   const heading = selectedNb?.name ?? (filter.kind === "tag" ? `#${filter.tag}` : "모든 노트");
 
   async function createNote(kind: NoteKind = "text") {
@@ -61,6 +69,41 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
     }
     await repo.saveNote(note);
     setSelectedId(note.id);
+  }
+
+  async function moveNote(note: Note, to: MoveTarget) {
+    await repo.moveNote(note, { notebookId: to.notebookId, folderId: to.folderId });
+  }
+
+  /** Save from the editor, keeping the note where moveNote last put it. */
+  function saveFromEditor(next: Note) {
+    const current = latestNotes.current.find((n) => n.id === next.id);
+    return repo.saveNote(current
+      ? { ...next, notebookId: current.notebookId, folderId: current.folderId ?? null, ...(current.order !== undefined && { order: current.order }) }
+      : next);
+  }
+
+  async function createFolder() {
+    if (!selectedNb) return;
+    const name = await dialogs.prompt({ title: "새 폴더", label: "폴더 이름", actionLabel: "만들기" });
+    if (name) await repo.createFolder(selectedNb.id, name);
+  }
+
+  async function renameFolder(folder: Folder) {
+    const name = await dialogs.prompt({ title: "폴더 이름 변경", label: "폴더 이름", initialValue: folder.name, actionLabel: "저장" });
+    if (name && name !== folder.name) await repo.renameFolder(folder, name);
+  }
+
+  async function deleteFolder(folder: Folder) {
+    const inside = notes.filter((n) => n.folderId === folder.id);
+    const ok = await dialogs.confirm({
+      title: "폴더 삭제",
+      description: inside.length
+        ? `"${folder.name}" 폴더를 삭제할까요? 안의 노트 ${inside.length}개는 삭제되지 않고 노트북 맨 위 목록으로 나와요.`
+        : `"${folder.name}" 폴더를 삭제할까요?`,
+      actionLabel: "폴더 삭제",
+    });
+    if (ok) await repo.deleteFolder(folder, inside);
   }
 
   async function deleteNote(note: Note) {
@@ -106,7 +149,7 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
     else await open?.flush();
     setFilter({ kind: "all" });
     setSelectedId(null);
-    await repo.deleteNotebook(nb, inside);
+    await repo.deleteNotebook(nb, inside, folders.filter((f) => f.notebookId === nb.id));
   }
 
   // Save the open note while still signed in: after sign-out the rules reject the write.
@@ -139,7 +182,8 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
         url={shareUrls.notebook(user.uid, selectedNb.id)}
         onToggle={(next) => repo.setNotebookPublic(selectedNb, next)}
       />
-      <HStack gap={1}>
+      <HStack gap={1} wrap="wrap">
+        <Button label="새 폴더" size="sm" variant="secondary" onClick={() => void createFolder()} />
         <Button label="이름 변경" size="sm" variant="ghost" onClick={() => void renameNotebook(selectedNb)} />
         <Button label="노트북 삭제" size="sm" variant="ghost" onClick={() => void deleteNotebook(selectedNb)} />
       </HStack>
@@ -157,6 +201,12 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
       onCreate={() => void createNote()}
       onCreateMindmap={() => void createNote("mindmap")}
       onDelete={(n) => void deleteNote(n)}
+      notebooks={notebooks}
+      folders={folders}
+      tree={tree}
+      onMove={(n, to) => void moveNote(n, to)}
+      onRenameFolder={(f) => void renameFolder(f)}
+      onDeleteFolder={(f) => void deleteFolder(f)}
       headerExtra={notebookControls ?? (filter.kind === "tag" && (
         <Button label="태그 필터 해제" size="sm" variant="secondary" onClick={() => setFilter({ kind: "all" })} />
       ))}
@@ -170,7 +220,9 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
       ownerUid={user.uid}
       controlRef={editorControl}
       notebooks={notebooks}
-      onSave={(next) => repo.saveNote(next)}
+      folders={folders}
+      onMove={(n, to) => void moveNote(n, to)}
+      onSave={saveFromEditor}
       onDelete={(n) => void deleteNote(n)}
       onBack={isNarrow ? () => setSelectedId(null) : undefined}
     />
