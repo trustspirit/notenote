@@ -214,7 +214,7 @@ export function NoteEditor({ note, ownerUid, notebooks, onSave, onDelete, onBack
             variant="secondary"
             isLoading={aiState.busy}
             isDisabled={editor.isEmpty || aiState.busy}
-            tooltip="제목·목록·인용·강조를 정돈하고, 웹에서 사실을 확인해 출처 링크를 덧붙여요 (1~2분, 한도 2회분)"
+            tooltip="제목·목록·인용·강조를 정돈하고, 웹에서 사실을 확인해 출처 링크를 덧붙여요 (1~2분, 한도 5회분)"
             onClick={() => void organize()}
           />
         </>}

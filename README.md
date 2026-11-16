@@ -113,7 +113,7 @@ verbatim `<blockquote>` quotes with a "— speaker, source, date" line, sparing 
 and `RESEARCH_RULES` (checking and citing).
 
 - Cost: web search is billed per search ($10 / 1,000) plus the result tokens, so every organize
-  counts as 2 units of `AI_DAILY_LIMIT` (30 units = 15 organizes a day). Web search must be enabled for your Anthropic organization.
+  counts as 5 units of `AI_DAILY_LIMIT` (30 units = 6 organizes a day). Web search must be enabled for your Anthropic organization.
 - Links: the server returns the URLs that actually came back from search (`sources`). The client keeps
   a link only if it is one of those or was already in the note (`web/src/lib/links.ts`); any other link
   is unwrapped to plain text, so a guessed URL can't slip in.

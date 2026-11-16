@@ -14,7 +14,7 @@ const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 const AI_ALLOWED_EMAILS = defineString("AI_ALLOWED_EMAILS", { default: "" });
 // AI units per user per UTC day. Every "정리하기" also checks facts on the web, so it costs AI_UNITS_PER_CALL.
 const AI_DAILY_LIMIT = defineInt("AI_DAILY_LIMIT", { default: 30 });
-const AI_UNITS_PER_CALL = 2;
+const AI_UNITS_PER_CALL = 5;
 
 export const organize = onCall(
   {
