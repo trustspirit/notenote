@@ -156,7 +156,9 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
       onCreate={() => void createNote()}
       onCreateMindmap={() => void createNote("mindmap")}
       onDelete={(n) => void deleteNote(n)}
-      headerExtra={notebookControls}
+      headerExtra={notebookControls ?? (filter.kind === "tag" && (
+        <Button label="태그 필터 해제" size="sm" variant="secondary" onClick={() => setFilter({ kind: "all" })} />
+      ))}
     />
   );
 

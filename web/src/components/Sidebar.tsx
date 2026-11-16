@@ -88,7 +88,8 @@ export function Sidebar(p: Props) {
                 size="sm"
                 label={`#${tag} ${c}`}
                 color={f.kind === "tag" && f.tag === tag ? "blue" : "default"}
-                onClick={() => p.onFilter({ kind: "tag", tag })}
+                // Tapping the active tag again clears the filter.
+                onClick={() => p.onFilter(f.kind === "tag" && f.tag === tag ? { kind: "all" } : { kind: "tag", tag })}
               />
             ))}
           </HStack>
