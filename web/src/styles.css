@@ -49,6 +49,8 @@ body { background: var(--color-background-body); }
 .note-item[aria-current="true"]:hover { background: color-mix(in srgb, var(--color-accent) 16%, transparent); }
 .note-item:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
+/* overflow: hidden on .swipe-row would clip an outside outline, so draw the focus ring inside. */
+.swipe-row .note-item:focus-visible { outline-offset: -2px; }
 /* Touch swipe-to-delete: the delete button's width tracks the drag so it never shows through the row. */
 .swipe-row { position: relative; overflow: hidden; border-radius: var(--radius-element); touch-action: pan-y; }
 .swipe-content { transition: transform .18s ease; will-change: transform; }

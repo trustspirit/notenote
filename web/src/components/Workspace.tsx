@@ -72,7 +72,8 @@ export function Workspace({ user, onSignOut }: { user: User; onSignOut: () => vo
     if (!ok) return;
     // Drop pending edits first, or the editor's unmount save would re-create the note.
     if (editorControl.current?.noteId === note.id) editorControl.current.discard();
-    setSelectedId(null);
+    // The list can now delete a note other than the open one; keep the open editor in that case.
+    if (selectedId === note.id) setSelectedId(null);
     await repo.deleteNote(note);
   }
 
