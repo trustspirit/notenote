@@ -225,3 +225,7 @@ body { background: var(--color-background-body); }
 }
 body.dnd-active { user-select: none; cursor: grabbing; }
 @media (prefers-reduced-motion: reduce) { .root-zone { transition: none; } }
+
+/* ---------- installed app (PWA): keep the top bar clear of the iOS status bar / notch ---------- */
+/* viewport-fit=cover lets the page draw under the status bar; env() is 0 in a normal browser tab. */
+[role="banner"] { padding-top: env(safe-area-inset-top); }
